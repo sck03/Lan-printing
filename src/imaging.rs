@@ -16,7 +16,12 @@ pub fn load_image(path: &str) -> AppResult<DynamicImage> {
     reader.decode().map_err(|e| format!("图片无法打开：{e}"))
 }
 pub fn white_rgb(img: DynamicImage) -> image::RgbImage {
-    let rgba = img.to_rgba8();
+    // JPEGs and most scanner output already have RGB pixels. Reuse their buffer
+    // instead of allocating RGBA and RGB copies for each high-resolution page.
+    if let DynamicImage::ImageRgb8(rgb) = img {
+        return rgb;
+    }
+    let rgba = img.into_rgba8();
     image::RgbImage::from_fn(rgba.width(), rgba.height(), |x, y| {
         let p = rgba.get_pixel(x, y).0;
         let a = p[3] as u16;
@@ -71,4 +76,26 @@ pub fn save_scan(img: DynamicImage, output: &str, options: &ScanOptions) -> AppR
     )
     .map_err(|e| e.to_string())?;
     std::fs::write(output, bytes).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn opaque_images_reuse_pixels_and_transparency_composites_on_white() {
+        let rgb = image::RgbImage::from_pixel(2, 2, image::Rgb([10, 20, 30]));
+        let pixels = rgb.as_ptr();
+        let result = white_rgb(DynamicImage::ImageRgb8(rgb));
+        assert_eq!(result.as_ptr(), pixels);
+        assert_eq!(result.get_pixel(0, 0).0, [10, 20, 30]);
+
+        let rgba =
+            image::RgbaImage::from_raw(3, 1, vec![10, 20, 30, 255, 10, 20, 30, 0, 10, 20, 30, 128])
+                .unwrap();
+        let result = white_rgb(DynamicImage::ImageRgba8(rgba));
+        assert_eq!(result.get_pixel(0, 0).0, [10, 20, 30]);
+        assert_eq!(result.get_pixel(1, 0).0, [255, 255, 255]);
+        assert_eq!(result.get_pixel(2, 0).0, [132, 137, 142]);
+    }
 }

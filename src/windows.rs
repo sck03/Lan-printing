@@ -1,6 +1,6 @@
-pub use crate::imaging::save_scan;
-use crate::imaging::{load_image, white_rgb};
+use crate::imaging::{load_image, save_scan, white_rgb};
 use crate::model::*;
+use crate::platform::lan_ip;
 #[path = "firewall.rs"]
 mod firewall;
 #[path = "office.rs"]
@@ -99,14 +99,6 @@ pub fn single_instance(root: &Path) -> AppResult<Option<std::fs::File>> {
             }
         })
         .map_err(|e| format!("无法锁定数据目录；程序可能已在运行：{e}"))
-}
-pub fn lan_ip() -> String {
-    (|| {
-        let s = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
-        s.connect("192.0.2.1:80").ok()?;
-        Some(s.local_addr().ok()?.ip().to_string())
-    })()
-    .unwrap_or_else(|| "127.0.0.1".into())
 }
 pub fn show_error(message: &str) {
     unsafe {

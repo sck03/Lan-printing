@@ -1,8 +1,8 @@
 //! macOS / Linux host backend: CUPS, Poppler, SANE and optional LibreOffice.
 //! Commands receive separate arguments, never shell-interpolated upload names.
-pub use crate::imaging::save_scan;
-use crate::imaging::{load_image, white_rgb};
+use crate::imaging::{load_image, save_scan, white_rgb};
 use crate::model::*;
+use crate::platform::lan_ip;
 use serde::Serialize;
 use std::{
     path::{Path, PathBuf},
@@ -34,14 +34,6 @@ pub fn single_instance(root: &Path) -> AppResult<Option<std::fs::File>> {
         Err(std::fs::TryLockError::WouldBlock) => Ok(None),
         Err(e) => Err(format!("无法锁定数据目录：{e}")),
     }
-}
-pub fn lan_ip() -> String {
-    (|| {
-        let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
-        socket.connect("192.0.2.1:80").ok()?;
-        Some(socket.local_addr().ok()?.ip().to_string())
-    })()
-    .unwrap_or_else(|| "127.0.0.1".into())
 }
 
 fn executable(name: &str) -> Option<PathBuf> {
@@ -303,6 +295,29 @@ pub fn devices(show_virtual: bool) -> AppResult<Devices> {
     }
     Ok(result)
 }
+fn cups_page_ranges(value: &str, total: u32) -> AppResult<String> {
+    let pages = page_range(value, total)?;
+    let mut ranges = Vec::new();
+    let mut start = pages[0];
+    let mut end = start;
+    for next in pages.into_iter().skip(1).map(Some).chain([None]) {
+        if next == Some(end + 1) {
+            end += 1;
+            continue;
+        }
+        ranges.push(if start == end {
+            (start + 1).to_string()
+        } else {
+            format!("{}-{}", start + 1, end + 1)
+        });
+        if let Some(next) = next {
+            start = next;
+            end = next;
+        }
+    }
+    Ok(ranges.join(","))
+}
+
 fn print_arguments(options: &PrintOptions, pages: u32) -> AppResult<Vec<String>> {
     if !(1..=99).contains(&options.copies)
         || ![300, 600].contains(&options.render_dpi)
@@ -316,16 +331,14 @@ fn print_arguments(options: &PrintOptions, pages: u32) -> AppResult<Vec<String>>
         "short" => "two-sided-short-edge",
         _ => return Err("无效的双面设置。".into()),
     };
-    let ranges = page_range(&options.pages, pages)?
-        .iter()
-        .map(|p| (p + 1).to_string())
-        .collect::<Vec<_>>()
-        .join(",");
+    let ranges = cups_page_ranges(&options.pages, pages)?;
     Ok(vec![
         "-d".into(),
         options.printer.clone(),
         "-n".into(),
         options.copies.to_string(),
+        "-o".into(),
+        "Collate=True".into(),
         "-t".into(),
         "LanPrint".into(),
         "-o".into(),
@@ -387,18 +400,20 @@ pub fn print(
     Ok(())
 }
 
+fn sane_values<'a>(help: &'a str, option: &str) -> Option<&'a str> {
+    help.lines()
+        .find_map(|line| line.trim().strip_prefix(option)?.strip_prefix(' '))
+        .map(|values| values.split(" [").next().unwrap_or(values).trim())
+}
+
 fn scan_source(help: &str, requested: &str) -> AppResult<Option<String>> {
-    let Some(values) = help
-        .lines()
-        .find_map(|l| l.trim().strip_prefix("--source "))
-    else {
+    let Some(values) = sane_values(help, "--source") else {
         return if requested == "flatbed" {
             Ok(None)
         } else {
             Err("此扫描仪未报告自动进纸器。".into())
         };
     };
-    let values = values.split(" [").next().unwrap_or(values);
     values
         .split('|')
         .find(|v| {
@@ -413,6 +428,41 @@ fn scan_source(help: &str, requested: &str) -> AppResult<Option<String>> {
         .map(|v| Some(v.trim().to_owned()))
         .ok_or_else(|| "扫描仪不支持所选纸张来源，请在主机检查 SANE 设备能力。".into())
 }
+
+fn scan_mode(help: &str, color: bool) -> AppResult<String> {
+    let values = sane_values(help, "--mode").ok_or("扫描仪未报告色彩模式，请检查 SANE 驱动。")?;
+    let find = |names: &[&str]| {
+        values
+            .split('|')
+            .map(str::trim)
+            .find(|value| names.iter().any(|name| value.eq_ignore_ascii_case(name)))
+    };
+    let color_mode = find(&["Color", "Colour", "RGB"]);
+    let mode = if color {
+        color_mode
+    } else {
+        // Some backends expose only Color. save_scan performs the final grayscale
+        // conversion, so a color acquisition is safe for a grayscale request.
+        find(&["Gray", "Grey", "Grayscale", "Greyscale"]).or(color_mode)
+    };
+    mode.map(str::to_owned)
+        .ok_or_else(|| format!("扫描仪不支持所选色彩模式（驱动报告：{values}）。"))
+}
+
+fn scanner_help(scanner: &str, source: Option<&str>) -> AppResult<String> {
+    let mut cmd = command("scanimage")?;
+    cmd.args(["--device-name", scanner]);
+    if let Some(source) = source {
+        cmd.args(["--source", source]);
+    }
+    let help = run(cmd.arg("--all-options"))?;
+    Ok(format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&help.stdout),
+        String::from_utf8_lossy(&help.stderr)
+    ))
+}
+
 pub fn scan(output: &str, options: &ScanOptions) -> AppResult<()> {
     if ![100, 200, 300].contains(&options.dpi)
         || !["flatbed", "feeder"].contains(&options.source.as_str())
@@ -420,28 +470,27 @@ pub fn scan(output: &str, options: &ScanOptions) -> AppResult<()> {
     {
         return Err("无效的扫描参数。".into());
     }
-    let help =
-        run(command("scanimage")?.args(["--device-name", &options.scanner, "--all-options"]))?;
-    let help = format!(
-        "{}\n{}",
-        String::from_utf8_lossy(&help.stdout),
-        String::from_utf8_lossy(&help.stderr)
-    );
+    let mut help = scanner_help(&options.scanner, None)?;
+    let source = scan_source(&help, &options.source)?;
+    if source.is_some() {
+        // SANE options can change with the source (for example ADF versus flatbed).
+        help = scanner_help(&options.scanner, source.as_deref())?;
+    }
+    let mode = scan_mode(&help, options.color)?;
     let raw = Path::new(output).with_file_name("scan-source.png");
     let _pending = crate::store::PendingFile(raw.clone());
     let mut cmd = command("scanimage")?;
+    cmd.args(["--device-name", &options.scanner]);
+    if let Some(source) = source {
+        cmd.args(["--source", &source]);
+    }
     cmd.args([
-        "--device-name",
-        &options.scanner,
         "--format=png",
         "--mode",
-        if options.color { "Color" } else { "Gray" },
+        &mode,
         "--resolution",
         &options.dpi.to_string(),
     ]);
-    if let Some(source) = scan_source(&help, &options.source)? {
-        cmd.args(["--source", &source]);
-    }
     run(cmd.arg("--output-file").arg(&raw))?;
     save_scan(load_image(&raw.to_string_lossy())?, output, options)
 }
@@ -561,7 +610,8 @@ mod tests {
         };
         let args = print_arguments(&o, 5).unwrap();
         assert_eq!(args[1], o.printer);
-        assert!(args.contains(&"page-ranges=1,2,3".into()));
+        assert!(args.contains(&"page-ranges=1-3".into()));
+        assert!(args.contains(&"Collate=True".into()));
         assert!(args.contains(&"sides=two-sided-long-edge".into()));
         assert!(
             print_arguments(
@@ -574,6 +624,32 @@ mod tests {
             .is_err()
         );
         assert!(!printer("mono", "", "PageSize: *A4\nColorModel: Gray\n").color);
+    }
+    #[test]
+    fn cups_ranges_preserve_selection_without_expanding_long_documents() {
+        assert_eq!(cups_page_ranges("", 1000).unwrap(), "1-1000");
+        assert_eq!(
+            cups_page_ranges("8,3-5,1,4,10-12", 12).unwrap(),
+            "1,3-5,8,10-12"
+        );
+        assert_eq!(cups_page_ranges("1", 1).unwrap(), "1");
+        assert!(cups_page_ranges("", 0).is_err());
+        assert!(cups_page_ranges("2", 1).is_err());
+    }
+    #[test]
+    fn sane_modes_follow_backend_names_and_preserve_color_intent() {
+        let help = "  --mode Lineart|Grayscale|Color [Color]\n";
+        assert_eq!(scan_mode(help, false).unwrap(), "Grayscale");
+        assert_eq!(scan_mode(help, true).unwrap(), "Color");
+        assert_eq!(
+            scan_mode(" --mode Grey|Colour [Grey]", false).unwrap(),
+            "Grey"
+        );
+        assert_eq!(scan_mode(" --mode Color [Color]", false).unwrap(), "Color");
+        assert!(scan_mode(" --mode Gray|Lineart [Gray]", true).is_err());
+        assert!(scan_mode(" --mode Lineart [Lineart]", false).is_err());
+        assert!(scan_mode(" --mode [inactive]", true).is_err());
+        assert!(scan_mode("", true).is_err());
     }
     #[test]
     fn source_selection_never_silently_uses_flatbed_for_adf() {

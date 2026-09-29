@@ -45,8 +45,12 @@ jobs:
         run: bash scripts/build-unix.sh '${{ matrix.target }}' 'package/linux-${{ matrix.arch }}'
       - name: Package archive preserving executable permissions
         run: tar -czf 'LanPrint-linux-${{ matrix.arch }}.tar.gz' -C package 'linux-${{ matrix.arch }}'
-      - name: Verify native host startup
-        run: python3 scripts/host-smoke.py 'package/linux-${{ matrix.arch }}/LanPrint'
+      - name: Verify extracted archive and native host startup
+        run: |
+          mkdir verify
+          tar -xzf 'LanPrint-linux-${{ matrix.arch }}.tar.gz' -C verify
+          (cd 'verify/linux-${{ matrix.arch }}' && sha256sum -c SHA256SUMS.txt)
+          python3 scripts/host-smoke.py 'verify/linux-${{ matrix.arch }}/LanPrint'
       - uses: actions/upload-artifact@v4
         with:
           name: LanPrint-linux-${{ matrix.arch }}

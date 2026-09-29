@@ -93,8 +93,22 @@ pub fn run(args: &[String]) -> AppResult<()> {
     };
     std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     let root = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
-    let instance = platform::single_instance(&root)?;
     let path = root.join("config.json");
+    // Only the lock owner may initialize configuration or recover stored jobs.
+    // A second launch can arrive before the first has written config.json.
+    let Some(_instance) = platform::single_instance(&root)? else {
+        if !background && !no_tray {
+            let running_port = port
+                .or_else(|| {
+                    serde_json::from_slice::<Config>(&std::fs::read(&path).ok()?)
+                        .ok()
+                        .map(|config| config.port)
+                })
+                .unwrap_or(if demo { 17861 } else { 17860 });
+            platform::open(&format!("http://127.0.0.1:{running_port}"));
+        }
+        return Ok(());
+    };
     let mut config: Config = if path.exists() {
         serde_json::from_slice(&std::fs::read(&path).map_err(|e| e.to_string())?)
             .map_err(|e| format!("config.json 格式错误：{e}"))?
@@ -111,13 +125,6 @@ pub fn run(args: &[String]) -> AppResult<()> {
     }
     config.validate()?;
     let url = format!("http://127.0.0.1:{}", config.port);
-    // Reopening a desktop shortcut should reveal the running station.
-    let Some(_instance) = instance else {
-        if !background && !no_tray {
-            platform::open(&url);
-        }
-        return Ok(());
-    };
     let store = Store::open(root.clone())?;
     let listener = std::net::TcpListener::bind(("0.0.0.0", config.port))
         .map_err(|e| format!("端口 {} 无法使用：{e}", config.port))?;

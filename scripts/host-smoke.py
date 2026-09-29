@@ -62,6 +62,18 @@ with tempfile.TemporaryDirectory(prefix="lanprint-host-") as root:
                 second = subprocess.run(args, capture_output=True, timeout=15)
                 assert second.returncode == 0, second.stderr.decode(errors="replace")
                 assert process.poll() is None, "Second instance stopped the first host"
+                # Reproduce a second launch while the first owns the lock but has
+                # not yet initialized config.json. It must never write a new secret.
+                config = pathlib.Path(root) / "config.json"
+                saved = config.read_bytes()
+                config.unlink()
+                try:
+                    second = subprocess.run(args, capture_output=True, timeout=15)
+                    assert second.returncode == 0, second.stderr.decode(errors="replace")
+                    assert not config.exists(), "Second instance recreated configuration"
+                    assert get("/api/session")["csrf"] == session["csrf"]
+                finally:
+                    config.write_bytes(saved)
             except Exception:
                 print(log_path.read_text(errors="replace"), file=sys.stderr)
                 raise
@@ -77,4 +89,4 @@ with tempfile.TemporaryDirectory(prefix="lanprint-host-") as root:
                 assert process.returncode == 0, "SIGTERM must shut down gracefully"
     assert identities[0] == identities[1], "Machine identity changed after restart"
     assert (pathlib.Path(root) / "config.json").is_file()
-print("PASS: startup, machine identity, licensing gate, instance lock, restart and shutdown")
+print("PASS: startup, machine identity, licensing gate, exclusive configuration, restart and shutdown")

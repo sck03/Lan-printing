@@ -251,5 +251,5 @@ fn demo_scan(output: &str, options: &ScanOptions) -> AppResult<()> {
             *p = image::Rgb([180, 188, 183]);
         }
     }
-    platform::save_scan(image::DynamicImage::ImageRgb8(img), output, options)
+    crate::imaging::save_scan(image::DynamicImage::ImageRgb8(img), output, options)
 }

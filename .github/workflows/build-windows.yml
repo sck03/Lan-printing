@@ -29,8 +29,14 @@ jobs:
       - name: Package ZIP
         shell: pwsh
         run: Compress-Archive -Path package/windows-x64/* -DestinationPath LanPrint-windows-x64.zip
-      - name: Verify native host startup
-        run: python scripts/host-smoke.py package/windows-x64/LanPrint.exe
+      - name: Verify extracted archive and native host startup
+        shell: pwsh
+        run: |
+          Expand-Archive -LiteralPath LanPrint-windows-x64.zip -DestinationPath verify/windows-x64
+          $expected = ((Get-Content -LiteralPath verify/windows-x64/SHA256SUMS.txt).Trim() -split '\s+')[0]
+          $actual = (Get-FileHash -LiteralPath verify/windows-x64/LanPrint.exe -Algorithm SHA256).Hash
+          if ($actual -ne $expected) { throw 'Packaged executable checksum mismatch.' }
+          python scripts/host-smoke.py verify/windows-x64/LanPrint.exe
       - uses: actions/upload-artifact@v4
         with:
           name: LanPrint-windows-x64

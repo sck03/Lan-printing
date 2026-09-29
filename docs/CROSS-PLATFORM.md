@@ -2,7 +2,7 @@
 
 ## 下载与架构
 
-仓库提供三份独立 GitHub Actions 工作流，所有任务运行格式检查、严格 Clippy、Rust 单元测试、发布构建及 HTTP 启动验证，然后上传压缩包。
+仓库提供三份独立 GitHub Actions 工作流，所有任务运行格式检查、严格 Clippy、Rust 单元测试及发布构建。压缩包重新解压并通过 SHA256 校验后，使用解压出的程序运行 HTTP 启动验证，最后上传压缩包。
 
 | 工作流 | 原生运行环境 | 产物 |
 | --- | --- | --- |
@@ -56,7 +56,9 @@ scanimage -L
 | 原厂驱动预设 / 托盘 / 登录启动开关 | 提供 | 不提供托盘；使用 CUPS 默认设置与系统服务管理器 |
 | 防火墙 | 检查与管理员修复 | 只检查端口监听，防火墙由管理员手动配置 |
 
-CUPS 按驱动报告的纸张、颜色、双面能力提供选项；不识别的驱动能力会显示警告。网页设置转换为 CUPS 标准参数，实际支持以驱动为准。扫描每次仅取一页，SANE 驱动须支持 PNG 输出、Color/Gray 模式及所选分辨率；无法识别进纸器来源会报错，避免误用平板。办公文档转换需要足够字体，否则排版可能变化。上传后应检查预览。
+CUPS 按驱动报告的纸张、颜色、双面能力提供选项；不识别的驱动能力会显示警告。网页设置转换为 CUPS 标准参数，连续页码合并为范围，多份打印按份逐页排序，实际支持以驱动为准。
+
+扫描每次仅取一页，SANE 驱动须支持 PNG 输出及所选分辨率。程序先选择平板/进纸器，再读取该来源的色彩能力并设置色彩和分辨率；支持 Color/Colour/RGB 和 Gray/Grey/Grayscale/Greyscale 名称。仅提供彩色模式时，灰度请求会在采集后转成灰度；不支持彩色时不会把彩色请求静默改成黑白。无法识别进纸器来源会报错，避免误用平板。办公文档转换需要足够字体，否则排版可能变化。上传后应检查预览。
 
 所有平台的“已提交”均表示进入系统队列，不能保证已经出纸。超时后先查主机队列再重试，避免重复打印。程序不自动提升权限或修改 macOS/Linux 防火墙；只开放所配置的 TCP 端口到可信内网。
 
@@ -84,4 +86,6 @@ bash scripts/build-unix.sh x86_64-unknown-linux-gnu dist/linux-new
 python3 scripts/host-smoke.py dist/linux-new/LanPrint
 ```
 
-Windows：`./scripts/build.ps1 -Target x86_64-pc-windows-msvc -OutputDirectory dist/windows-new`。输出目录必须尚不存在。Unix Rust 测试使用真实 Poppler 打开和渲染生成的扫描 PDF；CUPS 参数与 SANE 来源解析使用固定输入，不会消耗纸张。Linux CI 还运行真实 LibreOffice 转换。HTTP 测试验证启动、机器码、未授权保护、实例锁和重启持久化，不使用私钥。跨目标 `cargo check` 只能验证编译，不能代替原生运行或设备验收。
+Windows：`./scripts/build.ps1 -Target x86_64-pc-windows-msvc -OutputDirectory dist/windows-new`。输出目录必须尚不存在，脚本在构建前检查，且不会覆盖已有目录。Windows 脚本只接受 x64 GNU/MSVC；Unix 脚本要求目标与当前 Rust 主机一致，并需要 Python 3 读取 Cargo 配置中的实际产物目录。
+
+Unix Rust 测试使用真实 Poppler 打开和渲染生成的扫描 PDF；CUPS 页码与 SANE 来源、色彩解析使用固定输入，不会消耗纸张。Linux CI 还运行真实 LibreOffice 转换。HTTP 测试验证启动、机器码、未授权保护、实例锁和重启持久化，并模拟配置尚未写入时的重复启动，确认第二个进程不会创建或改写配置；测试不使用私钥。跨目标 `cargo check` 只能验证编译，不能代替原生运行或设备验收。

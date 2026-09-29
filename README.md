@@ -102,7 +102,7 @@ macOS、Linux 的安装、依赖、启动命令与功能差异见[跨平台部�
 ./scripts/build.ps1 -OutputDirectory dist/windows-new
 ```
 
-或 `cargo test --locked`、`cargo build --release --locked --bin lan-print`。macOS / Linux 安装主机依赖后运行 `bash scripts/build-unix.sh <Rust目标> dist/new-build`。打包目录须为尚未存在的新目录。测试涉及页码校验、会话签名、网络限制、文件隔离、任务幂等、重启恢复和原生 PDF 打开/渲染，不消耗纸张。
+或 `cargo test --locked`、`cargo build --release --locked --bin lan-print`。macOS / Linux 安装主机依赖及 Python 3 后运行 `bash scripts/build-unix.sh <Rust目标> dist/new-build`，目标须与本机 Rust 主机一致。打包目录须为尚未存在的新目录。测试涉及页码校验、会话签名、网络限制、文件隔离、任务幂等、重启恢复和原生 PDF 打开/渲染，不消耗纸张。CI 会解压最终安装包、校验 SHA256，并启动解压后的程序验证。
 
 跨平台启动验证：`python scripts/host-smoke.py <可执行文件路径>`，无需私钥或真实设备。内部 Windows 浏览器集成测试：`node scripts/smoke.cjs`，需要私有签发工具、开发机 Playwright 和 Edge；公开仓库 CI 不依赖这些私有文件。真实设备兼容性仍需在办公室连接的打印机与扫描仪上验证。
 

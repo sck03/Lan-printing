@@ -13,6 +13,15 @@ pub use native::*;
 #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 compile_error!("LanPrint supports Windows, macOS and Linux hosts.");
 
+pub fn lan_ip() -> String {
+    (|| {
+        let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+        socket.connect("192.0.2.1:80").ok()?;
+        Some(socket.local_addr().ok()?.ip().to_string())
+    })()
+    .unwrap_or_else(|| "127.0.0.1".into())
+}
+
 pub fn data_directory(demo: bool) -> crate::model::AppResult<std::path::PathBuf> {
     #[cfg(windows)]
     let base = std::env::var_os("LOCALAPPDATA")
