@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>局域打印站</title>
+    <link rel="stylesheet" href="/app.css" />
+    <script src="/app.js" defer></script>
+    <script src="/profiles.js" defer></script>
+    <script src="/network.js" defer></script>
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="/"
+        >▤ <span>局域打印站<small>OFFICE PRINT & SCAN</small></span></a
+      ><span id="connection">正在连接…</span>
+    </header>
+    <main>
+      <div class="intro">
+        <div>
+          <p class="eyebrow">让文件，轻松落到纸上。</p>
+          <h1>办公室里的共享打印站</h1>
+          <p>选好文件，确认设置，剩下的交给打印机。</p>
+        </div>
+        <div class="share">
+          <div class="share-details">
+            <span>同事访问地址</span>
+            <code id="share-url">—</code>
+            <button id="copy-url" class="subtle">复制地址</button>
+            <span>手机请连接同一局域网 / Wi-Fi</span>
+          </div>
+          <figure class="share-qr">
+            <div class="share-qr-frame">
+              <img id="share-qr" width="148" height="148" alt="手机扫码打开打印页面" hidden />
+              <span id="share-qr-status" role="status">正在生成二维码…</span>
+            </div>
+            <figcaption>手机扫码打印</figcaption>
+          </figure>
+        </div>
+      </div>
+      <section
+        id="network-card"
+        class="card network-card"
+        aria-labelledby="network-title"
+        hidden
+      >
+        <div class="card-heading">
+          <h2 id="network-title">局域网访问检查</h2>
+          <div id="network-actions" class="network-actions">
+            <button id="network-check" type="button" class="subtle">
+              重新检查
+            </button>
+            <button
+              id="network-repair"
+              type="button"
+              class="primary"
+              hidden
+              disabled
+            >
+              一键修复端口放行
+            </button>
+          </div>
+        </div>
+        <p id="network-status" role="status" aria-live="polite">
+          正在检查服务端口和 Windows 防火墙…
+        </p>
+        <p id="network-port" class="muted"></p>
+        <ul id="network-details"></ul>
+        <p id="network-hint" class="muted">
+          修复需在主机确认 Windows 管理员授权，只放行当前程序的 TCP
+          服务端口和本地子网，适用于域、专用和公用网络。不会关闭防火墙或删除其他阻止规则。
+        </p>
+        <p class="muted">
+          本机检查不能代替另一台电脑的实际访问测试；若仍无法连接，请检查第三方防火墙、无线客户端隔离或网络路由。
+        </p>
+      </section>
+      <div id="notice" role="status" hidden></div>
+      <div id="error" role="alert" hidden></div>
+      <nav aria-label="功能">
+        <button class="tab active" data-tab="print">01 &nbsp; 打印文件</button
+        ><button class="tab" data-tab="scan">02 &nbsp; 扫描原稿</button
+        ><button class="tab" data-tab="jobs">
+          03 &nbsp; 我的任务 <span id="job-count"></span>
+        </button>
+      </nav>
+      <section id="print-panel" class="panel">
+        <div class="workspace">
+          <article class="card">
+            <div class="card-heading">
+              <h2>选择文件</h2>
+              <span>PDF · 图片 · Office / WPS</span>
+            </div>
+            <label id="dropzone" class="dropzone"
+              ><span class="upload-icon">↑</span
+              ><strong>拖入文件，或点击选择</strong
+              ><span id="upload-hint"
+                >支持 PDF、图片、Word、Excel、PPT 及 WPS 文档</span
+              ><input
+                id="file-input"
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.bmp,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.wps,.et,.dps"
+            /></label>
+            <p class="muted">
+              <span id="office-hint"
+                >Office/WPS 文档由主机转换为 PDF
+                后预览与打印；表格沿用文件内的打印区域和分页。</span
+              >
+            </p>
+            <div id="files" class="file-list"></div>
+          </article>
+          <article class="card">
+            <div class="card-heading">
+              <h2>打印设置</h2>
+              <button id="refresh-devices" class="subtle">刷新设备</button>
+            </div>
+            <form id="print-form">
+              <label>打印机<select id="printer" required></select></label>
+              <div class="form-grid">
+                <label
+                  >份数<input
+                    id="copies"
+                    type="number"
+                    value="1"
+                    min="1"
+                    max="99"
+                    required /></label
+                ><label>纸张<select id="paper"></select></label
+                ><label
+                  >单双面<select id="duplex">
+                    <option value="simplex">单面打印</option>
+                    <option value="long">双面 · 长边翻转</option>
+                    <option value="short">双面 · 短边翻转</option>
+                  </select></label
+                ><label
+                  >色彩<select id="print-color">
+                    <option value="false">黑白</option>
+                    <option value="true">彩色</option>
+                  </select></label
+                ><label
+                  >方向<select id="landscape">
+                    <option value="false">纵向</option>
+                    <option value="true">横向</option>
+                  </select></label
+                ><label
+                  >页码范围<input
+                    id="pages"
+                    placeholder="全部，例如 1-3,5"
+                    maxlength="200"
+                /></label>
+              </div>
+              <div class="driver-options" id="driver-profiles">
+                <label
+                  >驱动打印预设<select id="driver-profile">
+                    <option value="">通用设置（使用上方参数）</option>
+                  </select></label
+                >
+                <p class="muted" id="profile-hint">
+                  照片纸类型、质量和“高速”等原厂选项，可在主机创建预设后使用。
+                </p>
+                <label
+                  >图像处理清晰度<select id="render-dpi">
+                    <option value="300">300 DPI · 日常文档</option>
+                    <option value="600">600 DPI · 高清照片（较慢）</option>
+                  </select></label
+                >
+                <p class="muted">
+                  照片建议选择 600
+                  DPI；驱动的“高质量”和“关闭高速”请在预设中单独设置。低分辨率原图不会因此增加细节。
+                </p>
+                <button type="button" id="refresh-profiles" class="subtle">
+                  刷新预设
+                </button>
+                <div id="profile-admin" hidden>
+                  <label
+                    >新预设名称<input
+                      id="profile-name"
+                      maxlength="80"
+                      placeholder="例如：L300 照片纸 · 高质量 · 关闭高速" /></label
+                  ><button type="button" id="create-profile" class="subtle">
+                    打开原厂设置并保存预设</button
+                  ><button
+                    type="button"
+                    id="delete-profile"
+                    class="subtle"
+                    disabled
+                  >
+                    删除所选预设
+                  </button>
+                </div>
+              </div>
+              <div class="selected-summary" id="selected-summary">
+                请先选择一个文件
+              </div>
+              <button id="print-submit" class="primary" type="submit" disabled>
+                提交打印 →
+              </button>
+              <p class="muted">
+                按比例缩放至可打印区域。提交后可在「我的任务」查看进度。
+              </p>
+            </form>
+          </article>
+        </div>
+        <article id="preview-card" class="card preview-card" hidden>
+          <div class="card-heading">
+            <h2>文件预览</h2>
+            <div>
+              <button id="prev-page" class="subtle">上一页</button
+              ><span id="page-label"></span
+              ><button id="next-page" class="subtle">下一页</button>
+            </div>
+          </div>
+          <div class="preview-background">
+            <img id="preview" alt="所选文件的页面预览" />
+          </div>
+          <p class="muted">
+            预览显示文档原页；实际打印会应用上方的纸张、方向和色彩设置。
+          </p>
+        </article>
+      </section>
+      <section id="scan-panel" class="panel" hidden>
+        <div class="workspace">
+          <article class="card scan-guide">
+            <span class="upload-icon">▧</span>
+            <h2>把原稿放好，就可以开始了</h2>
+            <p>
+              平板扫描请将原稿正面朝下放在玻璃上；使用进纸器时按设备标识放置。
+            </p>
+            <ol>
+              <li>选择扫描仪和扫描设置</li>
+              <li>点击开始扫描，等待任务完成</li>
+              <li>在「我的任务」下载扫描文件</li>
+            </ol>
+            <p class="muted">
+              当前每个任务扫描一页。使用进纸器也只取一页；多页原稿请逐页提交。
+            </p>
+          </article>
+          <article class="card">
+            <div class="card-heading"><h2>扫描设置</h2></div>
+            <form id="scan-form">
+              <label>扫描仪<select id="scanner" required></select></label>
+              <div class="form-grid">
+                <label
+                  >原稿来源<select id="source">
+                    <option value="flatbed">平板</option>
+                    <option value="feeder">自动进纸器 · 单页</option>
+                  </select></label
+                ><label
+                  >清晰度<select id="dpi">
+                    <option value="100">100 DPI · 快速</option>
+                    <option value="200" selected>200 DPI · 日常文档</option>
+                    <option value="300">300 DPI · 精细</option>
+                  </select></label
+                ><label
+                  >色彩<select id="scan-color">
+                    <option value="true">彩色</option>
+                    <option value="false">灰度</option>
+                  </select></label
+                ><label
+                  >保存格式<select id="format">
+                    <option value="pdf">PDF</option>
+                    <option value="jpg">JPG</option>
+                    <option value="png">PNG</option>
+                  </select></label
+                >
+              </div>
+              <button id="scan-submit" class="primary" disabled>
+                开始扫描 →
+              </button>
+            </form>
+          </article>
+        </div>
+      </section>
+      <section id="jobs-panel" class="panel" hidden>
+        <article class="card">
+          <div class="card-heading">
+            <h2>我的任务</h2>
+            <span>自动更新</span>
+          </div>
+          <div id="jobs"></div>
+        </article>
+      </section>
+      <footer>
+        <span
+          >文件仅暂存在办公室主机 ·
+          <span id="retention">30</span> 分钟无操作后自动清理</span
+        ><span><a href="/register">注册信息</a> · 本浏览器独立查看任务</span>
+      </footer>
+    </main>
+    <div id="toast" role="status" hidden></div>
+  </body>
+</html>

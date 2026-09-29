@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>注册 · 局域打印站</title>
+    <link rel="stylesheet" href="/app.css" />
+    <script src="/activation.js" defer></script>
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="/">▤ <span>局域打印站<small>OFFICE PRINT & SCAN</small></span></a>
+      <span id="activation-badge">等待注册</span>
+    </header>
+    <main class="activation-main">
+      <p class="eyebrow">一次注册，连接整个办公室。</p>
+      <h1>注册这台打印主机</h1>
+      <p class="activation-intro">完成注册后，即可使用文件打印、扫描和局域网共享。</p>
+      <section class="card activation-card" aria-labelledby="activation-title">
+        <h2 id="activation-title">本机授权</h2>
+        <p id="activation-status" role="status" aria-live="polite">正在读取注册状态…</p>
+        <div id="activation-local" hidden>
+          <label for="machine-code">第一步 · 复制机器码，向软件提供方申请注册码</label>
+          <div class="machine-row">
+            <input id="machine-code" readonly spellcheck="false" aria-label="本机机器码" />
+            <button id="copy-machine" type="button" class="subtle">复制机器码</button>
+          </div>
+          <form id="activation-form">
+            <label for="registration-code">第二步 · 粘贴收到的注册码</label>
+            <textarea id="registration-code" rows="5" maxlength="4096" placeholder="LP1.…" required spellcheck="false" autocomplete="off"></textarea>
+            <button id="activate-submit" class="primary" type="submit">注册并进入打印站 →</button>
+          </form>
+          <p class="muted">注册码绑定这台 操作系统 主机，永久有效。同事通过浏览器使用时无需再次注册。</p>
+        </div>
+        <div id="activation-remote" hidden>
+          <p>打印站尚未解锁，请联系主机管理员，在运行 LanPrint 的电脑上打开本机地址并输入注册码。</p>
+          <button id="refresh-activation" class="subtle" type="button">已完成注册，重新检查</button>
+        </div>
+        <div id="activation-success" hidden>
+          <p id="licensed-customer"></p>
+          <a href="/">进入打印站 →</a>
+        </div>
+        <p id="activation-error" role="alert" hidden></p>
+      </section>
+      <p class="muted">注册信息保存在主机上，重启后自动验证。重装 操作系统 或更换主机后，请重新申请注册码。</p>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,39 @@
+name: Build Windows
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Verify public source boundary
+        run: python scripts/check-public-tree.py
+      - name: Test and build Windows x64
+        shell: pwsh
+        run: ./scripts/build.ps1 -Target x86_64-pc-windows-msvc -OutputDirectory package/windows-x64
+      - name: Package ZIP
+        shell: pwsh
+        run: Compress-Archive -Path package/windows-x64/* -DestinationPath LanPrint-windows-x64.zip
+      - name: Verify native host startup
+        run: python scripts/host-smoke.py package/windows-x64/LanPrint.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LanPrint-windows-x64
+          path: LanPrint-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 30

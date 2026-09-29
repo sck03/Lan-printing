@@ -1,0 +1,53 @@
+name: Build macOS
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            arch: x64
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Install PDF and scanner tools
+        run: brew install poppler sane-backends
+      - name: Verify public source boundary
+        run: python3 scripts/check-public-tree.py
+      - name: Test and build macOS
+        run: bash scripts/build-unix.sh '${{ matrix.target }}' 'package/macos-${{ matrix.arch }}'
+      - name: Package archive preserving executable permissions
+        run: tar -czf 'LanPrint-macos-${{ matrix.arch }}.tar.gz' -C package 'macos-${{ matrix.arch }}'
+      - name: Verify native host startup
+        run: python3 scripts/host-smoke.py 'package/macos-${{ matrix.arch }}/LanPrint'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LanPrint-macos-${{ matrix.arch }}
+          path: LanPrint-macos-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+          retention-days: 30

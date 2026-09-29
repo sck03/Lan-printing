@@ -1,0 +1,16 @@
+target/
+dist/
+release/
+.test-data/
+.test-data-*/
+.office-test-*/
+artifacts/
+admin-tools/
+signing-key.hex
+license-*.txt
+src/bin/license-generator.rs
+*LicenseGenerator*
+*license-generator*
+*.pem
+*.key
+package/

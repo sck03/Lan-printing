@@ -1,0 +1,55 @@
+name: Build Linux
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: linux-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    env:
+      LANPRINT_TEST_OFFICE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cups-client poppler-utils sane-utils libreoffice-writer libreoffice-calc libreoffice-impress
+      - name: Verify public source boundary
+        run: python3 scripts/check-public-tree.py
+      - name: Test and build Linux
+        run: bash scripts/build-unix.sh '${{ matrix.target }}' 'package/linux-${{ matrix.arch }}'
+      - name: Package archive preserving executable permissions
+        run: tar -czf 'LanPrint-linux-${{ matrix.arch }}.tar.gz' -C package 'linux-${{ matrix.arch }}'
+      - name: Verify native host startup
+        run: python3 scripts/host-smoke.py 'package/linux-${{ matrix.arch }}/LanPrint'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LanPrint-linux-${{ matrix.arch }}
+          path: LanPrint-linux-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+          retention-days: 30
