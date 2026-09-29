@@ -1,5 +1,15 @@
 # 验证记录
 
+## 当前三平台构建
+
+2026-09-29，提交 `2ea7dda` 的 Windows x64、macOS x64/ARM64、Linux x64/ARM64 原生构建全部成功，含格式检查、Clippy、Rust 测试、发布打包及 HTTP 主机启动验证。最新提交的结果以 [GitHub Actions](https://github.com/sck03/Lan-printing/actions) 为准。
+
+本地 Windows 24 项 Rust 测试与浏览器回归通过，覆盖上传、图片/PDF 预览、演示打印扫描、会话隔离、CSRF/Host、队列取消和手机布局。Unix 使用真实 Poppler 验证 PDF 编码与预览，Linux CI 还验证 LibreOffice 转换。没有物理打印扫描设备验收。
+
+Windows 与 Unix 共用 `src/imaging.rs` 的图像解码、白底合成和扫描 PDF 编码，平台原生渲染测试继续覆盖同一实现。已删除执行完毕的一次性清理脚本；旧报告中的临时文件路径仅为历史记录，清理后不保证仍存在。
+
+## 历史 Windows 验证
+
 2026-09-28 全项目复查。主机为 Windows 10 企业版 LTSC x64，使用 Rust GNU 工具链。
 
 ## 本轮修复
@@ -35,12 +45,6 @@
 | Windows PowerShell 5.1 兼容检测 | 发行 EXE 的 PDF 生成、页数、渲染、设备枚举及子进程退出通过；报告为 `artifacts/review-compatibility/report.json` |
 
 发行构建的哈希以 `dist/SHA256SUMS.txt` 为准，避免文档内嵌的旧哈希误导维护。最新浏览器截图为 `artifacts/desktop.png`、`artifacts/mobile.png`；Office 验证结果为 `artifacts/office/report.json`。
-
-## 过时文件清理
-
-确认过时的 104 个文件包括 13 个历史测试目录中的数据、旧兼容检测中间结果、旧设备请求/响应及不再使用的 PNG 图标副本。源代码已去掉生成该 PNG 的步骤；正式 EXE 继续使用 ICO。
-
-2026-09-28 已按用户指示运行 `scripts/cleanup-reviewed-files.ps1`，删除全部 104 个过时文件，并清理 13 个历史测试目录及旧兼容检测目录。复查清理范围内无文件残留。脚本仅删除列出的文件和清空后的目录，跳过缺失文件，并拒绝链接目录或正在使用的测试目录。正式用户数据、最新测试样张/报告及升级回滚备份保留。
 
 ## 验证边界
 

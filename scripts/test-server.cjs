@@ -8,7 +8,7 @@ const { setTimeout: delay } = require("node:timers/promises");
 
 function issueTestLicense(machine, customer = "自动化测试") {
   return execFileSync(
-    process.env.LANPRINT_GENERATOR || path.join(__dirname, "../target/debug/license-generator.exe"),
+    process.env.LANPRINT_GENERATOR || path.join(__dirname, "../admin-tools/LicenseGenerator.exe"),
     ["issue", "--private-key", process.env.LANPRINT_SIGNING_KEY || path.join(__dirname, "../admin-tools/signing-key.hex"), "--machine", machine, "--customer", customer],
     { encoding: "utf8", windowsHide: true },
   ).trim();

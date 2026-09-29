@@ -14,3 +14,5 @@ src/bin/license-generator.rs
 *.pem
 *.key
 package/
+__pycache__/
+*.py[cod]
