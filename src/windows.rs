@@ -1029,17 +1029,14 @@ pub fn scan(output: &str, options: &ScanOptions) -> AppResult<()> {
     )?
     .object()?;
     let temp = Path::new(output).with_extension("wia.bmp");
-    let result = (|| {
-        invoke(
-            &transferred,
-            "SaveFile",
-            DISPATCH_METHOD,
-            vec![Var::string(&automation_path(&temp.to_string_lossy()))],
-        )?;
-        save_scan(load_image(&temp.to_string_lossy())?, output, options)
-    })();
-    let _ = std::fs::remove_file(temp);
-    result
+    let _pending = crate::store::PendingFile(temp.clone());
+    invoke(
+        &transferred,
+        "SaveFile",
+        DISPATCH_METHOD,
+        vec![Var::string(&automation_path(&temp.to_string_lossy()))],
+    )?;
+    save_scan(load_image(&temp.to_string_lossy())?, output, options)
 }
 
 #[cfg(test)]

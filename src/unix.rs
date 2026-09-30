@@ -159,10 +159,10 @@ pub fn document_pages(path: &str) -> AppResult<u32> {
     }
 }
 pub fn preview(path: &str, page: u32, output: &str) -> AppResult<()> {
-    if page >= document_pages(path)? {
-        return Err("页码超出范围。".into());
-    }
     if extension(path)? == "pdf" {
+        if page >= document_pages(path)? {
+            return Err("页码超出范围。".into());
+        }
         let prefix = Path::new(output).with_extension("");
         let number = (page + 1).to_string();
         run(command("pdftoppm")?
@@ -189,6 +189,9 @@ pub fn preview(path: &str, page: u32, output: &str) -> AppResult<()> {
         }
         Ok(())
     } else {
+        if page != 0 {
+            return Err("页码超出范围。".into());
+        }
         white_rgb(load_image(path)?.resize(1400, 1400, image::imageops::FilterType::Lanczos3))
             .save(output)
             .map_err(|e| e.to_string())
@@ -683,6 +686,24 @@ mod tests {
         drop(first);
         assert!(single_instance(&root).unwrap().is_some());
     }
+    #[test]
+    fn image_preview_checks_page_and_renders_without_pdf_tools() {
+        let root = std::env::temp_dir().join(format!("lanprint-image-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let _pending = crate::store::PendingDirectory(root.clone());
+        let input = root.join("input.png");
+        let output = root.join("preview.jpg");
+        image::RgbaImage::from_pixel(20, 40, image::Rgba([0, 0, 0, 0]))
+            .save(&input)
+            .unwrap();
+        assert!(preview(&input.to_string_lossy(), 1, &output.to_string_lossy()).is_err());
+        assert!(!output.exists());
+        preview(&input.to_string_lossy(), 0, &output.to_string_lossy()).unwrap();
+        let image = load_image(&output.to_string_lossy()).unwrap().to_rgb8();
+        assert_eq!(image.dimensions(), (700, 1400));
+        assert_eq!(image.get_pixel(350, 700).0, [255, 255, 255]);
+    }
+
     #[test]
     fn scan_pdf_renders_with_poppler() {
         let root = std::env::temp_dir().join(format!("lanprint-pdf-{}", uuid::Uuid::new_v4()));

@@ -1,7 +1,7 @@
 use crate::model::*;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
 };
 
@@ -42,6 +42,7 @@ pub fn atomic_json(path: &Path, data: &impl Serialize) -> AppResult<()> {
     use std::io::Write;
     let temp = path.with_extension("tmp");
     let bytes = serde_json::to_vec_pretty(data).map_err(|e| e.to_string())?;
+    let _pending = PendingFile(temp.clone());
     let mut f = std::fs::File::create(&temp).map_err(|e| e.to_string())?;
     f.write_all(&bytes)
         .and_then(|_| f.sync_all())
@@ -99,7 +100,9 @@ impl Store {
         {
             let path = e.path();
             let id = path.file_stem().and_then(|x| x.to_str()).unwrap_or("");
-            if uuid::Uuid::parse_str(id).is_ok() && !s.db.files.contains_key(id) {
+            if uuid::Uuid::parse_str(id).is_ok()
+                && s.db.files.get(id).is_none_or(|f| s.path(f) != path)
+            {
                 let _ = std::fs::remove_file(path);
             }
         }
@@ -126,6 +129,30 @@ impl Store {
             .jobs
             .iter()
             .any(|j| j.active() && j.file_id.as_deref() == Some(id))
+    }
+    pub fn pinned_files(&self) -> HashSet<&str> {
+        self.db
+            .jobs
+            .iter()
+            .filter(|j| j.active())
+            .filter_map(|j| j.file_id.as_deref())
+            .collect()
+    }
+    pub fn touch(
+        &mut self,
+        id: &str,
+        owner: &str,
+        retention_minutes: u64,
+    ) -> AppResult<StoredFile> {
+        let old = self.owned(id, owner)?;
+        let mut file = old.clone();
+        file.expires_at = now() + retention_minutes * 60;
+        self.db.files.insert(id.into(), file.clone());
+        if let Err(e) = self.save() {
+            self.db.files.insert(id.into(), old);
+            return Err(e);
+        }
+        Ok(file)
     }
     pub fn existing_request(
         &self,
@@ -204,11 +231,13 @@ impl Store {
         Ok(())
     }
     pub fn cleanup(&mut self) -> AppResult<()> {
+        let at = now();
+        let pinned = self.pinned_files();
         let expired: Vec<String> = self
             .db
             .files
             .values()
-            .filter(|f| f.expires_at <= now() && !self.pinned(&f.id))
+            .filter(|f| f.expires_at <= at && !pinned.contains(f.id.as_str()))
             .map(|f| f.id.clone())
             .collect();
         for id in expired {
@@ -221,9 +250,9 @@ impl Store {
             }
             self.db.files.remove(&id);
         }
-        self.db
-            .jobs
-            .retain(|j| j.active() || j.finished_at.unwrap_or(j.created_at) + 86400 > now());
+        self.db.jobs.retain(|j| {
+            j.active() || at.saturating_sub(j.finished_at.unwrap_or(j.created_at)) < 86400
+        });
         self.save()
     }
 }
@@ -340,6 +369,64 @@ mod tests {
             !st.db.files.contains_key(&file.id),
             "Failed writes must roll back memory"
         );
+    }
+
+    #[test]
+    fn restart_removes_orphaned_office_original_but_keeps_committed_pdf() {
+        let root = std::env::temp_dir().join(format!("lanprint-orphan-{}", uuid::Uuid::new_v4()));
+        let _cleanup = PendingDirectory(root.clone());
+        let mut st = Store::open(root.clone()).unwrap();
+        let file = StoredFile {
+            id: uuid::Uuid::new_v4().to_string(),
+            owner: "alice".into(),
+            name: "report.docx.pdf".into(),
+            extension: "pdf".into(),
+            bytes: 1,
+            pages: 1,
+            created_at: now(),
+            expires_at: now() + 60,
+            scanned: false,
+        };
+        let pdf = st.path(&file);
+        let original = pdf.with_extension("docx");
+        let unrelated = root.join("files/notes.txt");
+        for path in [&pdf, &original, &unrelated] {
+            std::fs::write(path, b"test").unwrap();
+        }
+        st.insert_file(file.clone(), 1).unwrap();
+        drop(st);
+        let st = Store::open(root).unwrap();
+        assert!(pdf.exists());
+        assert!(!original.exists());
+        assert!(unrelated.exists());
+        assert!(st.owned(&file.id, "alice").is_ok());
+    }
+
+    #[test]
+    fn failed_touch_preserves_expiry_and_removes_temporary_state() {
+        let root = std::env::temp_dir().join(format!("lanprint-touch-{}", uuid::Uuid::new_v4()));
+        let _cleanup = PendingDirectory(root.clone());
+        let mut st = Store::open(root.clone()).unwrap();
+        let file = StoredFile {
+            id: uuid::Uuid::new_v4().to_string(),
+            owner: "alice".into(),
+            name: "test.pdf".into(),
+            extension: "pdf".into(),
+            bytes: 1,
+            pages: 1,
+            created_at: now(),
+            expires_at: now() + 60,
+            scanned: false,
+        };
+        st.insert_file(file.clone(), 1).unwrap();
+        assert!(st.touch(&file.id, "bob", 30).is_err());
+        let touched = st.touch(&file.id, "alice", 30).unwrap();
+        assert!(touched.expires_at > file.expires_at);
+        std::fs::remove_file(root.join("state.json")).unwrap();
+        std::fs::create_dir(root.join("state.json")).unwrap();
+        assert!(st.touch(&file.id, "alice", 60).is_err());
+        assert_eq!(st.db.files[&file.id].expires_at, touched.expires_at);
+        assert!(!root.join("state.tmp").exists());
     }
 
     #[test]

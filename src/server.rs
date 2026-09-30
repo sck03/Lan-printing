@@ -685,13 +685,19 @@ async fn files(
     Extension(owner): Extension<String>,
 ) -> Json<serde_json::Value> {
     let st = s.store.lock().await;
+    let pinned = st.pinned_files();
+    let at = now();
     let mut items: Vec<_> = st
         .db
         .files
         .values()
-        .filter(|f| f.owner == owner && (f.expires_at > now() || st.pinned(&f.id)))
+        .filter(|f| f.owner == owner && (f.expires_at > at || pinned.contains(f.id.as_str())))
         .collect();
-    items.sort_by_key(|f| std::cmp::Reverse(f.created_at));
+    items.sort_by(|a, b| {
+        b.created_at
+            .cmp(&a.created_at)
+            .then_with(|| a.id.cmp(&b.id))
+    });
     Json(json!(
         items.into_iter().map(public_file).collect::<Vec<_>>()
     ))
@@ -855,10 +861,7 @@ async fn remove_file(
 }
 async fn touch_file(s: &Shared, owner: &str, id: &str) -> AppResult<(StoredFile, PathBuf)> {
     let mut st = s.store.lock().await;
-    let mut f = st.owned(id, owner)?;
-    f.expires_at = now() + s.config.retention_minutes * 60;
-    st.db.files.insert(id.into(), f.clone());
-    st.save()?;
+    let f = st.touch(id, owner, s.config.retention_minutes)?;
     Ok((f.clone(), st.path(&f)))
 }
 async fn download(
