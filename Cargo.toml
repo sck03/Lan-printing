@@ -13,7 +13,8 @@ name = "lan-print"
 path = "src/main.rs"
 
 [dependencies]
-axum = { version = "0.8", features = ["multipart"] }
+# Keep only the HTTP/extractor features used by the host.
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "multipart", "query", "tokio"] }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "process", "time", "fs", "sync", "signal", "io-util"] }
 tokio-util = { version = "0.7", features = ["io"] }
 serde = { version = "1", features = ["derive"] }

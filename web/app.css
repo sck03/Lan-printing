@@ -25,10 +25,6 @@
   width: auto;
   margin-top: 0;
 }
-.network-actions[hidden],
-#network-repair[hidden] {
-  display: none;
-}
 .network-card p {
   margin: 8px 0;
   overflow-wrap: anywhere;
@@ -73,9 +69,6 @@
   padding: 14px;
   background: #f7faf6;
   border-radius: 10px;
-}
-#profile-admin[hidden] {
-  display: none;
 }
 .driver-options .subtle {
   margin: 4px 10px 6px 0;

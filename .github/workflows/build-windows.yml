@@ -15,7 +15,7 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
@@ -37,7 +37,7 @@ jobs:
           $actual = (Get-FileHash -LiteralPath verify/windows-x64/LanPrint.exe -Algorithm SHA256).Hash
           if ($actual -ne $expected) { throw 'Packaged executable checksum mismatch.' }
           python scripts/host-smoke.py verify/windows-x64/LanPrint.exe
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: LanPrint-windows-x64
           path: LanPrint-windows-x64.zip
