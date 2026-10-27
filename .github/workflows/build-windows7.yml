@@ -1,0 +1,43 @@
+name: Build Windows 7 x86
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows7-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Verify public source boundary
+        run: python scripts/check-public-tree.py
+      - name: Build and execute the independent .NET 4.0 x86 host
+        shell: pwsh
+        run: ./scripts/build-legacy.ps1 -OutputDirectory package/windows7-x86
+      - name: Package ZIP
+        shell: pwsh
+        run: Compress-Archive -Path package/windows7-x86/* -DestinationPath LanPrint-windows7-x86.zip
+      - name: Verify extracted package and x86 startup
+        shell: pwsh
+        run: |
+          Expand-Archive -LiteralPath LanPrint-windows7-x86.zip -DestinationPath verify/windows7-x86
+          python scripts/legacy-package.py verify verify/windows7-x86
+          if ($LASTEXITCODE -ne 0) { throw 'Extracted legacy package verification failed.' }
+          python scripts/host-smoke.py verify/windows7-x86/LanPrintLegacy.exe --legacy
+          if ($LASTEXITCODE -ne 0) { throw 'Extracted legacy host startup failed.' }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: LanPrint-windows7-x86
+          path: LanPrint-windows7-x86.zip
+          if-no-files-found: error
+          retention-days: 30

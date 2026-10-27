@@ -13,6 +13,7 @@ import urllib.error
 import urllib.request
 
 exe = str(pathlib.Path(sys.argv[1]).resolve(strict=True))
+legacy = "--legacy" in sys.argv[2:]
 with socket.socket() as sock:
     sock.bind(("127.0.0.1", 0))
     port = sock.getsockname()[1]
@@ -48,7 +49,10 @@ with tempfile.TemporaryDirectory(prefix="lanprint-host-") as root:
                             raise
                         time.sleep(0.1)
                 assert session["platform"] in ("windows", "macos", "linux"), session
-                assert session["driverProfiles"] == (os.name == "nt"), session
+                assert session["driverProfiles"] == (os.name == "nt" and not legacy), session
+                if legacy:
+                    assert session["legacy"] and session["maxUploadMb"] == 100, session
+                    assert not session["firewallRepair"] and not session["officeFormats"], session
                 state = get("/api/license")
                 assert not state["registered"] and state["localAdmin"], state
                 assert re.fullmatch(r"LP1-[0-9A-F]{32}", state["machineCode"]), state

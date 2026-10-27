@@ -5,14 +5,17 @@
 | 主机系统 | 构建架构 | 打印 / PDF / 扫描 |
 | --- | --- | --- |
 | Windows 10/11 | x64 | GDI / WinRT PDF / WIA |
+| Windows 7 SP1 独立版 | x86（32 位） | .NET Framework 4.0 / GDI / CPU PDFium / WIA |
 | macOS | Intel x64、Apple Silicon ARM64 | CUPS / Poppler / SANE |
 | Linux | x64、ARM64 | CUPS / Poppler / SANE |
 
 macOS、Linux 的安装、依赖、启动命令与功能差异见[跨平台部署说明](docs/CROSS-PLATFORM.md)。扫描需设备有对应平台的 WIA/SANE 驱动；macOS 的 Image Capture 专用设备尚不支持。
 
+旧电脑作为打印/扫描主机请使用 [Windows 7 32 位独立版](docs/WINDOWS7.md)：单独 EXE/ZIP、独立数据目录，默认上传 **100 MB**，保留原注册码规则，需要 .NET Framework 4.0 完整版或兼容的 4.x 运行库。支持 PDF/图片与单页 WIA 扫描；办公文档先导出 PDF，原厂驱动预设/600 DPI/一键防火墙修复在正常版提供。Win7 真机与设备仍需现场验收。
+
 ## 下载与 GitHub 自动构建
 
-[GitHub Actions](https://github.com/sck03/Lan-printing/actions) 中分别提供 `Build Windows`、`Build macOS`、`Build Linux` 三份工作流。推送到 `main`、提交 PR、推送 `v*` 标签或点击 **Run workflow** 都可触发。在成功运行的 **Artifacts** 中下载相应 ZIP / tar.gz，包内含可执行文件、文档和 SHA256 校验值；这些包不会自动发布为 GitHub Release。
+[GitHub Actions](https://github.com/sck03/Lan-printing/actions) 中分别提供 `Build Windows`、`Build Windows 7 x86`、`Build macOS`、`Build Linux` 四份工作流。推送到 `main`、提交 PR、推送 `v*` 标签或点击 **Run workflow** 都可触发。在成功运行的 **Artifacts** 中下载相应 ZIP / tar.gz，包内含可执行文件、文档和 SHA256 校验值；这些包不会自动发布为 GitHub Release。
 
 源码和构建产物均不包含注册码生成器、签发私钥或已签发注册码。应用仅内嵌 `assets/license-public-key.hex` 验证公钥；已有注册码规则保留。
 
@@ -91,6 +94,7 @@ macOS、Linux 的安装、依赖、启动命令与功能差异见[跨平台部�
 - [Office/WPS、照片预设与新增验证](docs/OFFICE-PHOTO.md)
 - [注册码使用、生成器与密钥管理](docs/LICENSING.md)
 - [macOS / Linux 部署与三平台自动构建](docs/CROSS-PLATFORM.md)
+- [Windows 7 SP1 32 位独立版](docs/WINDOWS7.md)
 
 演示模式：`LanPrint.exe --demo`，默认端口 17861、独立数据目录 `LanPrint-demo`，同样需要注册，可使用本机原注册码。演示打印不使用设备，演示扫描生成样张。PDF 检查和预览仍使用 Windows 真正的渲染器。
 
@@ -108,7 +112,7 @@ macOS、Linux 的安装、依赖、启动命令与功能差异见[跨平台部�
 
 ## 技术选择与参考
 
-本项目采用 Rust + Axum + 内嵌原生 HTML/CSS/JS；Windows `windows` crate 调用 WinRT PDF、GDI 打印、WIA COM 和系统托盘。macOS / Linux 使用独立进程调用 CUPS、Poppler、SANE 和可选的 LibreOffice。不需要前端构建。
+正常版采用 Rust + Axum + 内嵌原生 HTML/CSS/JS；Windows `windows` crate 调用 WinRT PDF、GDI 打印、WIA COM 和系统托盘。macOS / Linux 使用独立进程调用 CUPS、Poppler、SANE 和可选的 LibreOffice。旧系统版采用 C# 4.0 / .NET Framework 4.0、GDI/WIA 和 CPU PDFium，复用同一套网页。不需要前端构建。
 
 Go 同样可以交付免安装 EXE，HTTP 服务维护成本较低；本项目选择 Rust 主要因为 Windows COM/WinRT 的类型化接口覆盖，且易于把打印、扫描和 PDF 能力集成到同一个原生程序。C# 自包含也可免安装，但需携带 .NET 运行时；C/C++ 可实现相同部署方式，内存与资源管理需要更多维护。
 

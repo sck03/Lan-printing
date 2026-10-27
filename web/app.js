@@ -177,6 +177,12 @@ $("next-page").onclick = () => {
     preview();
   }
 };
+function uploadHint() {
+  const office = session.officeFormats?.length
+    ? "、" + session.officeFormats.map((x) => x.toUpperCase()).join("、")
+    : "";
+  return `支持 PDF、图片${office} · 最大 ${session.maxUploadMb} MB`;
+}
 async function upload(file) {
   if (!file || uploadBusy || !session) return;
   if (file.size > session.maxUploadMb * 1024 * 1024) {
@@ -203,8 +209,7 @@ async function upload(file) {
     uploadBusy = false;
     $("file-input").disabled = false;
     $("file-input").value = "";
-    $("upload-hint").textContent =
-      `支持 PDF、图片、Word、Excel、PPT 及 WPS 文档 · 最大 ${session.maxUploadMb} MB`;
+    $("upload-hint").textContent = uploadHint();
   }
 }
 $("file-input").onchange = (e) => upload(e.target.files[0]);
@@ -352,6 +357,10 @@ async function refreshJobs() {
 function initializeShareQr() {
   const image = $("share-qr");
   const status = $("share-qr-status");
+  if (session.shareQr === false) {
+    image.closest("figure").hidden = true;
+    return;
+  }
   image.onload = () => {
     status.hidden = true;
     image.hidden = false;
@@ -398,15 +407,24 @@ async function poll() {
 document.addEventListener("DOMContentLoaded", async () => {
   try {
     session = await api("/api/session");
+    if (session.legacy) {
+      document.title = "局域打印站 · 旧系统版";
+      $("format-summary").textContent = "PDF · 图片";
+      $("file-input").accept = ".pdf,.png,.jpg,.jpeg,.bmp";
+      for (const option of [...$("render-dpi").options]) {
+        if (Number(option.value) > session.renderDpiMax) option.remove();
+      }
+    }
     initializeNetworkCheck();
     $("office-hint").textContent = session.officeFormats?.length
       ? `主机可转换：${session.officeFormats.map((x) => x.toUpperCase()).join("、")}。转换后预览并打印；表格沿用文件内的打印区域和分页。`
-      : "主机未检测到办公文档转换工具。Windows 请安装 Office/WPS；macOS、Linux 请安装 LibreOffice，或先导出 PDF。";
+      : session.legacy
+        ? "旧系统版使用 300 DPI 打印；Word、Excel、PPT 或 WPS 文档请先导出 PDF 再上传。"
+        : "主机未检测到办公文档转换工具。Windows 请安装 Office/WPS；macOS、Linux 请安装 LibreOffice，或先导出 PDF。";
     $("share-url").textContent = session.shareUrl;
     initializeShareQr();
     $("retention").textContent = session.retentionMinutes;
-    $("upload-hint").textContent =
-      `支持 PDF、图片${session.officeFormats?.length ? "、" + session.officeFormats.map((x) => x.toUpperCase()).join("、") : ""} · 最大 ${session.maxUploadMb} MB`;
+    $("upload-hint").textContent = uploadHint();
     await refreshProfiles();
     await refreshDevices();
     await poll();

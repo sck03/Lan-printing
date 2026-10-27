@@ -6,13 +6,15 @@ const { startTestServer } = require("./test-server.cjs");
 const { randomUUID } = require("node:crypto");
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
 const root = path.resolve(__dirname, "..");
-const output = path.join(root, "artifacts");
+const legacy = process.env.LANPRINT_LEGACY === "1";
+const output = path.join(root, "artifacts", ...(legacy ? ["legacy"] : []));
 fs.mkdirSync(output, { recursive: true });
 // Demo-only preset fixture; no real driver settings or physical printing.
 const profileId = randomUUID();
 let browser, server;
 (async () => {
   server = await startTestServer("smoke", (data) => {
+    if (legacy) return;
     fs.mkdirSync(path.join(data, "profiles"));
     fs.writeFileSync(
       path.join(data, "profiles", profileId + ".json"),
@@ -51,10 +53,17 @@ let browser, server;
   await page.waitForFunction(
     () => document.querySelector("#preview").naturalWidth > 0,
   );
-  await page.locator("#driver-profile").selectOption(profileId);
-  for (const id of ["paper", "duplex", "print-color", "landscape"])
-    assert.equal(await page.locator("#" + id).isDisabled(), true);
-  await page.locator("#render-dpi").selectOption("600");
+  if (legacy) {
+    assert.equal(await page.locator("#driver-profiles").isVisible(), false);
+    assert.equal(await page.locator("#format-summary").textContent(), "PDF · 图片");
+    assert.match(await page.locator("#upload-hint").textContent(), /100 MB/);
+    assert.deepEqual(await page.locator("#render-dpi option").evaluateAll((items) => items.map((item) => item.value)), ["300"]);
+  } else {
+    await page.locator("#driver-profile").selectOption(profileId);
+    for (const id of ["paper", "duplex", "print-color", "landscape"])
+      assert.equal(await page.locator("#" + id).isDisabled(), true);
+    await page.locator("#render-dpi").selectOption("600");
+  }
   await page.screenshot({
     path: path.join(output, "desktop.png"),
     fullPage: true,
@@ -76,9 +85,12 @@ let browser, server;
   const session = await (await a.request.get(base + "/api/session")).json();
   const headers = { "x-csrf-token": session.csrf };
   assert.equal(session.localAdmin, true);
-  const presets = await (await a.request.get(base + "/api/profiles")).json();
-  assert.equal(presets[0].id, profileId);
-  assert.equal(presets[0].devmode, undefined);
+  if (legacy) assert.equal(session.maxUploadMb, 100);
+  else {
+    const presets = await (await a.request.get(base + "/api/profiles")).json();
+    assert.equal(presets[0].id, profileId);
+    assert.equal(presets[0].devmode, undefined);
+  }
   const files = await (await a.request.get(base + "/api/files")).json();
   assert.equal(files.length, 2);
   const scan = files.find((f) => f.scanned);
@@ -168,12 +180,14 @@ let browser, server;
     ),
   );
   assert.deepEqual(errors, []);
-  assert.equal(
-    (
-      await a.request.delete(base + "/api/profiles/" + profileId, { headers })
-    ).status(),
-    200,
-  );
+  if (!legacy) {
+    assert.equal(
+      (
+        await a.request.delete(base + "/api/profiles/" + profileId, { headers })
+      ).status(),
+      200,
+    );
+  }
   const missingPreset = await a.request.post(base + "/api/print", {
     headers,
     data: {
@@ -183,10 +197,12 @@ let browser, server;
     },
   });
   assert.equal(missingPreset.status(), 400);
-  await page.locator("#refresh-profiles").click();
-  await page.waitForFunction(
-    () => document.querySelector("#driver-profile").value === "",
-  );
+  if (!legacy) {
+    await page.locator("#refresh-profiles").click();
+    await page.waitForFunction(
+      () => document.querySelector("#driver-profile").value === "",
+    );
+  }
   assert.equal(await page.locator("#paper").isDisabled(), false);
   assert.equal(
     Number(download.headers()["content-length"]),
@@ -273,7 +289,7 @@ let browser, server;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   console.log(
-    "PASS: upload, image/PDF preview, demo print, streamed PDF download, session isolation, CSRF/Host validation, retries after file deletion, cross-operation request ID rejection, cancellation, corrupt PDF rejection, worker cleanup, driver presets, 600 DPI option, mobile layout; no browser errors.",
+    `PASS: ${legacy ? "legacy x86, 100 MB limit, capability-aware UI" : "driver presets, 600 DPI option"}, upload, image/PDF preview, demo print, streamed PDF download, session isolation, CSRF/Host validation, retries after file deletion, cross-operation request ID rejection, cancellation, corrupt PDF rejection, worker cleanup, mobile layout; no browser errors.`,
   );
 })()
   .catch((e) => {

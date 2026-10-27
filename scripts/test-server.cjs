@@ -119,7 +119,7 @@ async function startTestServer(prefix, setup = () => {}, { demo = true, activate
               if (!result.ok) throw new Error(`Test activation failed: ${await result.text()}`);
             }
           }
-          return { base, data, stop, logs: () => log };
+          return { base, data, stop, pid: child.pid, logs: () => log };
         }
       } catch (error) {
         if (error.message?.startsWith("Test activation failed:") || error.code === "ENOENT" || error.status) throw error;

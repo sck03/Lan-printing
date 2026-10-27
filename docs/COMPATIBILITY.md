@@ -2,6 +2,8 @@
 
 macOS、Linux 的架构、依赖与设备限制见 [CROSS-PLATFORM.md](CROSS-PLATFORM.md)。以下为 Windows 后端的硬件兼容记录；Unix PDF 由 Poppler 处理，不使用 WinRT。
 
+Windows 7 SP1 32 位主机使用单独的 [.NET Framework 4.0 旧系统版](WINDOWS7.md)，PDF 在 CPU 上处理，独立数据目录及构建流程。下面的显卡/WinRT 记录适用于正常 Windows x64 版；旧系统版的 32 位执行、PDF/HTTP/状态测试不代表已完成 Win7 真机或设备验收。
+
 本项目不依赖特定显卡品牌，不链接 AMD SDK、CUDA、NVAPI 或 Intel 专用运行库。CPU 厂商和 GPU 厂商没有绑定关系；Intel/AMD CPU 配核显、AMD 独显或 NVIDIA 独显使用同一份 x64 EXE。
 
 图片解码、缩放、灰度和扫描 PDF 编码由 Rust `image`/CPU 完成。PDF 页数和渲染由 Windows `Windows.Data.Pdf` 完成，底层是否使用 GPU 由系统组件决定。GDI 将页面位图提交打印机驱动；WIA 负责扫描。客户端仅显示 HTML 与 JPEG 预览，不使用 WebGL 或 GPU 计算。
@@ -30,4 +32,4 @@ macOS、Linux 的架构、依赖与设备限制见 [CROSS-PLATFORM.md](CROSS-PLA
 5. 启用本次防睡眠确认空闲时共享可用；退出后确认恢复系统电源行为。
 6. 在测试数据目录执行重启/超时场景，确认任务不自动重复打印；真实任务超时后须人工核对打印机。
 
-同事的浏览器可以在 Windows/macOS/Linux/手机上运行。当前发行目标为 Windows x64 主机；Windows ARM64、32 位 Windows、Server Core 和旧版 Windows 不属于已验收发行目标。扫描限 WIA 单页，打印需要 Windows 可用的打印驱动，GPU 兼容不能代替设备兼容验收。
+同事的浏览器可以在 Windows/macOS/Linux/手机上运行。正常版发行目标为 Windows 10/11 x64；Windows 7 SP1 x86 为新增独立版本，仍需真机验收。Windows ARM64、Server Core 和其他旧系统不属于已验收发行目标。扫描限 WIA 单页，打印需要对应架构的 Windows 驱动，GPU 兼容不能代替设备兼容验收。
