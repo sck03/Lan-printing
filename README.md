@@ -11,7 +11,7 @@
 
 macOS、Linux 的安装、依赖、启动命令与功能差异见[跨平台部署说明](docs/CROSS-PLATFORM.md)。扫描需设备有对应平台的 WIA/SANE 驱动；macOS 的 Image Capture 专用设备尚不支持。
 
-旧电脑作为打印/扫描主机请使用 [Windows 7 32 位独立版](docs/WINDOWS7.md)：单独 EXE/ZIP、独立数据目录，默认上传 **100 MB**，保留原注册码规则，需要 .NET Framework 4.0 完整版或兼容的 4.x 运行库。支持 PDF/图片与单页 WIA 扫描；办公文档先导出 PDF，原厂驱动预设/600 DPI/一键防火墙修复在正常版提供。Win7 真机与设备仍需现场验收。
+旧电脑作为打印/扫描主机请使用 [Windows 7 32 位独立版](docs/WINDOWS7.md)：单独 EXE/ZIP、独立数据目录，默认上传 **100 MB**，保留原注册码规则，需要 .NET Framework 4.0 完整版或兼容的 4.x 运行库。支持 PDF/图片、单页 WIA 扫描、分享二维码、原厂照片驱动预设与 300/600 DPI；办公文档先导出 PDF，防火墙需手动放行。Win7 真机与设备仍需现场验收。
 
 ## 下载与 GitHub 自动构建
 

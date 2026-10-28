@@ -154,6 +154,7 @@ namespace LanPrint.Legacy
                     else MessageBox.Show("无法设置防自动睡眠。", "旧系统版");
                 };
                 menu.Items.Add("打开 Windows 打印机设置", null, delegate { Launch.Open("control.exe", "printers"); });
+                menu.Items.Add("管理照片打印预设", null, delegate { Launch.Open(url + "/#driver-profiles"); });
                 menu.Items.Add("打开 Windows 防火墙", null, delegate { Launch.Open("control.exe", "/name Microsoft.WindowsFirewall"); });
                 menu.Items.Add("退出打印站", null, delegate { Application.ExitThread(); });
                 tray.DoubleClick += delegate { Launch.Open(url); };

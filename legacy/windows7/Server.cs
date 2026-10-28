@@ -20,6 +20,7 @@ namespace LanPrint.Legacy
         internal readonly bool Demo;
         private readonly TcpListener listener;
         private readonly Semaphore connections = new Semaphore(24, 24), heavy = new Semaphore(1, 1);
+        private readonly Semaphore profileDialog = new Semaphore(1, 1);
         private readonly AutoResetEvent notify = new AutoResetEvent(false);
         private readonly object deviceLock = new object();
         private Devices cachedDevices;
@@ -79,8 +80,8 @@ namespace LanPrint.Legacy
                     if (method == "GET" && path == "/api/session")
                         http.JsonResponse(new { csrf = Security.Sign(Config, "csrf:" + http.Owner), demo = Demo, maxUploadMb = Config.max_upload_mb,
                             retentionMinutes = Config.retention_minutes, officeFormats = new string[0], localAdmin = http.Local,
-                            shareUrl = ShareUrl(), platform = "windows", legacy = true, renderDpiMax = 300,
-                            driverProfiles = false, firewallRepair = false, shareQr = false }, 200);
+                            shareUrl = ShareUrl(), platform = "windows", legacy = true,
+                            driverProfiles = true, firewallRepair = false }, 200);
                     else if (method == "GET" && path == "/api/license")
                     {
                         bool registered = Licensing.Registered();
@@ -89,6 +90,16 @@ namespace LanPrint.Legacy
                             message = !http.Local ? "请在打印主机打开本机地址完成注册。" : registered ? "已注册 · 本机永久授权" : "尚未注册或授权无效，请输入本机注册码。" }, 200);
                     }
                     else if (method == "GET" && path == "/api/devices") http.JsonResponse(GetDevices(), 200);
+                    else if (method == "GET" && path == "/api/share-qr.svg")
+                    {
+                        string url = ShareUrl();
+                        if (new Uri(url).IsLoopback) throw new ApiError(503, "未找到局域网地址，请连接网络后重试。");
+                        http.Bytes(Json.Utf8.GetBytes(ShareQr.Svg(url)), "image/svg+xml", 200);
+                    }
+                    else if (method == "GET" && path == "/api/profiles")
+                    {
+                        lock (Store.Sync) http.JsonResponse(Profiles.List(Store.Root), 200);
+                    }
                     else if (method == "GET" && path == "/api/network")
                     {
                         RequireHost(http);
@@ -126,6 +137,19 @@ namespace LanPrint.Legacy
                         else if (method == "POST" && path == "/api/files") Upload(http, body);
                         else if (method == "POST" && path == "/api/print") SubmitPrint(http, http.JsonBody<PrintInput>(body));
                         else if (method == "POST" && path == "/api/scan") SubmitScan(http, http.JsonBody<ScanInput>(body));
+                        else if (method == "POST" && path == "/api/profiles") CreateProfile(http, http.JsonBody<ProfileInput>(body));
+                        else if (method == "DELETE" && path.StartsWith("/api/profiles/", StringComparison.Ordinal))
+                        {
+                            RequireHost(http);
+                            string id = path.Substring("/api/profiles/".Length); Legacy.Store.RequireId(id);
+                            lock (Store.Sync)
+                            {
+                                if (Store.Db.jobs.Any(j => j.Active && j.print != null && j.print.profile_id == id))
+                                    throw new ApiError(400, "此预设正在被打印任务使用，请待任务结束后删除。");
+                                Profiles.Remove(Store.Root, id);
+                            }
+                            http.JsonResponse(new { ok = true }, 200);
+                        }
                         else
                         {
                             Match file = Regex.Match(path, "^/api/files/([0-9a-f-]+)(/(preview|download))?$");
@@ -172,6 +196,25 @@ namespace LanPrint.Legacy
                 }
                 return cachedDevices;
             }
+        }
+        private void CreateProfile(Http http, ProfileInput input)
+        {
+            RequireHost(http);
+            if (Demo) throw new ApiError(400, "演示模式不打开真实驱动设置。");
+            string name = input.name == null ? "" : input.name.Trim();
+            if (name.Length < 1 || name.Length > 60 || name.Any(Char.IsControl)) throw new ApiError(400, "预设名称须为 1–60 个字符。");
+            if (!GetDevices().printers.Any(p => p.id == input.printer)) throw new ApiError(400, "打印机不存在，请刷新设备列表。");
+            if (!profileDialog.WaitOne(0)) throw new ApiError(429, "主机正在设置其他预设，请稍后重试。");
+            try
+            {
+                lock (Store.Sync) if (Profiles.List(Store.Root).Length >= 50) throw new ApiError(400, "驱动预设最多 50 个，请先删除旧预设。");
+                DriverProfile profile = Worker.Call(Store.Root, Licensing, new WorkerRequest { operation = "profile", path = input.printer }, 300).profile;
+                if (profile == null) throw new InvalidDataException("驱动未返回预设。");
+                profile.name = name;
+                lock (Store.Sync) Profiles.Save(Store.Root, profile);
+                http.JsonResponse(profile.Public(), 200);
+            }
+            finally { profileDialog.Release(); }
         }
         private void Upload(Http http, string body)
         {
@@ -242,6 +285,7 @@ namespace LanPrint.Legacy
                         FileRecord file = Store.Owned(input.file_id, http.Owner);
                         if (input.options == null) throw new ApiError(400, "缺少打印参数。");
                         input.options.Validate(devices, file.pages);
+                        if (!String.IsNullOrEmpty(input.options.profile_id)) Profiles.Load(Store.Root, input.options.profile_id, input.options.printer);
                         job = Store.Enqueue(new Job { id = Guid.NewGuid().ToString("D"), owner = http.Owner, request_id = input.request_id, kind = "print",
                             name = file.name, file_id = file.id, print = input.options, status = "queued", message = "等待处理", created_at = Legacy.Store.Now() }, Config.max_pending);
                     }
@@ -295,9 +339,13 @@ namespace LanPrint.Legacy
                     Licensing.Load();
                     if (job.kind == "print")
                     {
-                        string path;
-                        lock (Store.Sync) path = Store.FilePath(Store.Owned(job.file_id, job.owner));
-                        Worker.Call(Store.Root, Licensing, new WorkerRequest { operation = "print", path = path, print = job.print, demo = Demo }, 180);
+                        string path; DriverProfile profile = null;
+                        lock (Store.Sync)
+                        {
+                            path = Store.FilePath(Store.Owned(job.file_id, job.owner));
+                            if (!String.IsNullOrEmpty(job.print.profile_id)) profile = Profiles.Load(Store.Root, job.print.profile_id, job.print.printer);
+                        }
+                        Worker.Call(Store.Root, Licensing, new WorkerRequest { operation = "print", path = path, print = job.print, profile = profile, demo = Demo }, 180);
                         status = Demo ? "simulated" : "submitted";
                         message = Demo ? "演示任务完成，未使用真实设备。" : "已提交系统打印队列；实际出纸以打印机为准。";
                     }

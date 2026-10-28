@@ -40,9 +40,9 @@ namespace LanPrint.Legacy
         {
             Printer device = devices.printers.Find(p => p.id == printer);
             if (device == null) throw new InvalidDataException("打印机不存在，请刷新设备列表。");
-            if (copies < 1 || copies > 99 || render_dpi != 300)
-                throw new InvalidDataException("份数须为 1–99；旧系统版使用 300 DPI。");
-            if (!String.IsNullOrEmpty(profile_id)) throw new InvalidDataException("旧系统版不支持驱动预设。");
+            if (copies < 1 || copies > 99 || (render_dpi != 300 && render_dpi != 600))
+                throw new InvalidDataException("份数须为 1–99；图像处理清晰度须为 300 或 600 DPI。");
+            if (!String.IsNullOrEmpty(profile_id)) { Store.RequireId(profile_id); Ranges(pages, total); return; }
             if (duplex != "simplex" && duplex != "long" && duplex != "short")
                 throw new InvalidDataException("无效的双面设置。");
             if (duplex != "simplex" && !device.duplex) throw new InvalidDataException("此打印机不支持自动双面。");

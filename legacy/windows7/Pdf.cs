@@ -41,7 +41,7 @@ namespace LanPrint.Legacy
 
         internal Bitmap Render(int page, int maximum, bool gray, bool printing)
         {
-            if (page < 0 || page >= Pages || maximum < 1 || maximum > 4096)
+            if (page < 0 || page >= Pages || maximum < 1 || maximum > 7016)
                 throw new InvalidDataException("页面或渲染尺寸无效。");
             if (pdf != null) return pdf.Render(page, maximum, gray, printing);
             return RenderImage(maximum, gray);

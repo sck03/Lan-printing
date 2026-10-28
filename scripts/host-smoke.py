@@ -49,7 +49,7 @@ with tempfile.TemporaryDirectory(prefix="lanprint-host-") as root:
                             raise
                         time.sleep(0.1)
                 assert session["platform"] in ("windows", "macos", "linux"), session
-                assert session["driverProfiles"] == (os.name == "nt" and not legacy), session
+                assert session["driverProfiles"] == (os.name == "nt"), session
                 if legacy:
                     assert session["legacy"] and session["maxUploadMb"] == 100, session
                     assert not session["firewallRepair"] and not session["officeFormats"], session

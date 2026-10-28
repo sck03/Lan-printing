@@ -17,7 +17,7 @@ node scripts/qr-smoke.cjs
 
 Node/Playwright 只用于开发测试。可用 `PLAYWRIGHT_MODULE` 指定模块绝对路径、`EDGE_EXE` 指定浏览器、`LANPRINT_EXE` 指定待测 EXE。构建脚本执行格式检查、严格 Clippy、Rust 测试、release 构建并复制文档和检测脚本；可用 `-OutputDirectory PATH` 指定输出目录。交付前还须对发行 EXE 执行 smoke 测试及兼容检测。
 
-Windows 7 SP1 x86 独立版运行 `./scripts/build-legacy.ps1 -OutputDirectory dist/windows7-x86`，构建依赖与兼容边界见 [WINDOWS7.md](WINDOWS7.md)。内部测试设置 `LANPRINT_EXE` 为其 EXE 路径后运行 `node scripts/license-smoke.cjs` 和 `node scripts/legacy-stress.cjs`；浏览器打印扫描回归另外设置 `LANPRINT_LEGACY=1` 后运行 `node scripts/smoke.cjs`。普通 Rust 版运行回归时清除 `LANPRINT_LEGACY`。
+Windows 7 SP1 x86 独立版运行 `./scripts/build-legacy.ps1 -OutputDirectory dist/windows7-x86`，构建依赖与兼容边界见 [WINDOWS7.md](WINDOWS7.md)。内部测试设置 `LANPRINT_EXE` 为其 EXE 路径后运行 `node scripts/license-smoke.cjs` 和 `node scripts/legacy-stress.cjs`；浏览器打印扫描和二维码回归另外设置 `LANPRINT_LEGACY=1` 后运行 `node scripts/smoke.cjs` 与 `node scripts/qr-smoke.cjs`。普通 Rust 版运行回归时清除 `LANPRINT_LEGACY`。设置 `LANPRINT_TEST_DRIVER` 可在 x86 构建测试中读取已安装驱动并检查预设恢复，无需出纸；`LANPRINT_TEST_VIRTUAL_PRINT=1` 验证 Microsoft Print to PDF 的彩色/方向覆盖、份数与 600 DPI。
 
 集成测试共用 `scripts/test-server.cjs`，自动选取空闲端口，在系统临时目录创建独立数据，退出时结束测试进程树并删除数据。排错时设置 `KEEP_TEST_DATA=1` 才保留现场。截图和报告仍输出到 `artifacts`，Office 样张用 `scripts/office-fixtures.py` 生成。不要删除仍在使用的样张、最新验证报告或升级回滚备份。网络测试使用独立正常模式实例读取真实防火墙状态；修复/UAC 成功、取消和策略限制的网页交互使用 HTTP 测试响应，不实际修改系统防火墙。
 

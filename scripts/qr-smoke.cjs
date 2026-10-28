@@ -10,7 +10,7 @@ let server, browser;
 (async () => {
   server = await startTestServer("qr");
   const { base } = server;
-  const output = path.join(__dirname, "../artifacts/qr");
+  const output = path.join(__dirname, "../artifacts", process.env.LANPRINT_LEGACY === "1" ? "legacy/qr" : "qr");
   fs.mkdirSync(output, { recursive: true });
   browser = await chromium.launch({
     headless: true,

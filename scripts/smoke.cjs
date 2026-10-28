@@ -14,7 +14,9 @@ const profileId = randomUUID();
 let browser, server;
 (async () => {
   server = await startTestServer("smoke", (data) => {
-    if (legacy) return;
+    const mode = Buffer.alloc(224);
+    mode.writeUInt16LE(220, 68);
+    mode.writeUInt16LE(4, 70);
     fs.mkdirSync(path.join(data, "profiles"));
     fs.writeFileSync(
       path.join(data, "profiles", profileId + ".json"),
@@ -23,7 +25,7 @@ let browser, server;
         name: "照片纸 · 高质量 · 关闭高速",
         printer: "demo-printer",
         driver: "demo-fixture",
-        devmode: [],
+        devmode: legacy ? mode.toString("base64") : [],
       }),
     );
   });
@@ -54,16 +56,15 @@ let browser, server;
     () => document.querySelector("#preview").naturalWidth > 0,
   );
   if (legacy) {
-    assert.equal(await page.locator("#driver-profiles").isVisible(), false);
     assert.equal(await page.locator("#format-summary").textContent(), "PDF · 图片");
     assert.match(await page.locator("#upload-hint").textContent(), /100 MB/);
-    assert.deepEqual(await page.locator("#render-dpi option").evaluateAll((items) => items.map((item) => item.value)), ["300"]);
-  } else {
-    await page.locator("#driver-profile").selectOption(profileId);
-    for (const id of ["paper", "duplex", "print-color", "landscape"])
-      assert.equal(await page.locator("#" + id).isDisabled(), true);
-    await page.locator("#render-dpi").selectOption("600");
   }
+  assert.equal(await page.locator("#driver-profiles").isVisible(), true);
+  assert.deepEqual(await page.locator("#render-dpi option").evaluateAll((items) => items.map((item) => item.value)), ["300", "600"]);
+  await page.locator("#driver-profile").selectOption(profileId);
+  for (const id of ["paper", "duplex", "print-color", "landscape"])
+    assert.equal(await page.locator("#" + id).isDisabled(), true);
+  await page.locator("#render-dpi").selectOption("600");
   await page.screenshot({
     path: path.join(output, "desktop.png"),
     fullPage: true,
@@ -86,11 +87,22 @@ let browser, server;
   const headers = { "x-csrf-token": session.csrf };
   assert.equal(session.localAdmin, true);
   if (legacy) assert.equal(session.maxUploadMb, 100);
-  else {
-    const presets = await (await a.request.get(base + "/api/profiles")).json();
-    assert.equal(presets[0].id, profileId);
-    assert.equal(presets[0].devmode, undefined);
-  }
+  const presets = await (await a.request.get(base + "/api/profiles")).json();
+  assert.equal(presets[0].id, profileId);
+  assert.equal(presets[0].devmode, undefined);
+  assert.equal(presets[0].driver, undefined);
+  assert.equal((await a.request.post(base + "/api/profiles", { data: {} })).status(), 403);
+  const remote = await browser.newContext();
+  const remoteUrl = session.shareUrl;
+  const remoteSession = await (await remote.request.get(remoteUrl + "/api/session")).json();
+  assert.equal(remoteSession.localAdmin, false);
+  assert.equal((await remote.request.delete(remoteUrl + "/api/profiles/" + profileId, {
+    headers: { "x-csrf-token": remoteSession.csrf },
+  })).status(), 403);
+  assert.equal((await remote.request.post(remoteUrl + "/api/profiles", {
+    headers: { "x-csrf-token": remoteSession.csrf }, data: { printer: "demo-printer", name: "remote" },
+  })).status(), 403);
+  await remote.close();
   const files = await (await a.request.get(base + "/api/files")).json();
   assert.equal(files.length, 2);
   const scan = files.find((f) => f.scanned);
@@ -180,14 +192,12 @@ let browser, server;
     ),
   );
   assert.deepEqual(errors, []);
-  if (!legacy) {
-    assert.equal(
-      (
-        await a.request.delete(base + "/api/profiles/" + profileId, { headers })
-      ).status(),
-      200,
-    );
-  }
+  assert.equal(
+    (
+      await a.request.delete(base + "/api/profiles/" + profileId, { headers })
+    ).status(),
+    200,
+  );
   const missingPreset = await a.request.post(base + "/api/print", {
     headers,
     data: {
@@ -197,12 +207,10 @@ let browser, server;
     },
   });
   assert.equal(missingPreset.status(), 400);
-  if (!legacy) {
-    await page.locator("#refresh-profiles").click();
-    await page.waitForFunction(
-      () => document.querySelector("#driver-profile").value === "",
-    );
-  }
+  await page.locator("#refresh-profiles").click();
+  await page.waitForFunction(
+    () => document.querySelector("#driver-profile").value === "",
+  );
   assert.equal(await page.locator("#paper").isDisabled(), false);
   assert.equal(
     Number(download.headers()["content-length"]),
@@ -289,7 +297,7 @@ let browser, server;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   console.log(
-    `PASS: ${legacy ? "legacy x86, 100 MB limit, capability-aware UI" : "driver presets, 600 DPI option"}, upload, image/PDF preview, demo print, streamed PDF download, session isolation, CSRF/Host validation, retries after file deletion, cross-operation request ID rejection, cancellation, corrupt PDF rejection, worker cleanup, mobile layout; no browser errors.`,
+    `PASS: ${legacy ? "legacy x86, 100 MB limit, " : ""}driver presets, 600 DPI, host-only profile management, upload, image/PDF preview, demo print, streamed PDF download, session isolation, CSRF/Host validation, retries after file deletion, cross-operation request ID rejection, cancellation, corrupt PDF rejection, worker cleanup, mobile layout; no browser errors.`,
   );
 })()
   .catch((e) => {

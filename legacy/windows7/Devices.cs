@@ -80,29 +80,35 @@ namespace LanPrint.Legacy
             return printer;
         }
 
-        internal static void Print(string path, PrintOptions options, bool demo, string output = null)
+        internal static void Print(string path, PrintOptions options, bool demo, string output = null, DriverProfile profile = null)
         {
             using (var document = new Document(path))
             using (var print = new PrintDocument())
             {
+                if (!String.IsNullOrEmpty(options.profile_id) && (profile == null || profile.id != options.profile_id))
+                    throw new InvalidDataException("打印任务缺少驱动预设，已停止打印。");
                 if (demo) { options.Validate(Devices(true, true), document.Pages); Thread.Sleep(2000); return; }
                 print.PrinterSettings.PrinterName = options.printer;
                 if (!print.PrinterSettings.IsValid) throw new InvalidDataException("打印机不可用。");
                 options.Validate(new Devices { printers = new List<Printer> { PrinterInfo(print.PrinterSettings) } }, document.Pages);
+                if (profile != null) Profiles.Apply(print, profile);
+                else
+                {
+                    print.PrinterSettings.Duplex = options.duplex == "long" ? Duplex.Vertical : options.duplex == "short" ? Duplex.Horizontal : Duplex.Simplex;
+                    PaperSize paper = print.PrinterSettings.PaperSizes.Cast<PaperSize>().FirstOrDefault(p => PaperLabel(p.Kind) == options.paper);
+                    if (paper == null) throw new InvalidDataException("驱动未提供所选纸张。");
+                    print.DefaultPageSettings.PaperSize = paper;
+                    print.DefaultPageSettings.Landscape = options.landscape;
+                    print.DefaultPageSettings.Color = options.color;
+                }
                 // Copies are handled in our own collated page sequence, once only.
                 print.PrinterSettings.Copies = 1;
-                print.PrinterSettings.Duplex = options.duplex == "long" ? Duplex.Vertical : options.duplex == "short" ? Duplex.Horizontal : Duplex.Simplex;
-                PaperSize paper = print.PrinterSettings.PaperSizes.Cast<PaperSize>().FirstOrDefault(p => PaperLabel(p.Kind) == options.paper);
-                if (paper == null) throw new InvalidDataException("驱动未提供所选纸张。");
-                print.DefaultPageSettings.PaperSize = paper;
-                print.DefaultPageSettings.Landscape = options.landscape;
-                print.DefaultPageSettings.Color = options.color;
                 print.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
                 print.PrintController = new StandardPrintController();
                 if (output != null) { print.PrinterSettings.PrintToFile = true; print.PrinterSettings.PrintFileName = output; }
                 print.DocumentName = "局域打印站文档";
                 int[] pages = PrintOptions.Ranges(options.pages, document.Pages);
-                bool separator = options.duplex != "simplex" && pages.Length % 2 == 1;
+                bool separator = print.PrinterSettings.Duplex != Duplex.Simplex && pages.Length % 2 == 1;
                 int perCopy = pages.Length + (separator ? 1 : 0), position = 0;
                 print.PrintPage += delegate(object sender, PrintPageEventArgs e)
                 {
@@ -113,8 +119,8 @@ namespace LanPrint.Legacy
                         // the default origin is already the printable area's corner.
                         RectangleF area = e.PageSettings.PrintableArea;
                         if (area.Width <= 0 || area.Height <= 0) throw new InvalidDataException("打印区域无效。");
-                        int maximum = (int)Math.Min(4096, Math.Ceiling(Math.Max(area.Width, area.Height) / 100 * options.render_dpi));
-                        using (Bitmap bitmap = document.Render(pages[index], maximum, !options.color, true))
+                        int maximum = (int)Math.Min(7016, Math.Ceiling(Math.Max(area.Width, area.Height) / 100 * options.render_dpi));
+                        using (Bitmap bitmap = document.Render(pages[index], maximum, !e.PageSettings.Color, true))
                         {
                             float scale = Math.Min(area.Width / bitmap.Width, area.Height / bitmap.Height);
                             float w = bitmap.Width * scale, h = bitmap.Height * scale;

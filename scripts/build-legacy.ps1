@@ -46,7 +46,7 @@ try {
     New-Item -ItemType Directory -Path $OutputDirectory | Out-Null
     $outputRoot = (Resolve-Path -LiteralPath $OutputDirectory).Path
     $sourceRoot = Join-Path $projectRoot 'legacy/windows7'
-    $sources = @('Program.cs', 'Http.cs', 'Json.cs', 'License.cs', 'Store.cs', 'Multipart.cs', 'Devices.cs', 'Pdf.cs', 'Worker.cs', 'Server.cs')
+    $sources = @('Program.cs', 'Http.cs', 'Json.cs', 'License.cs', 'Store.cs', 'Multipart.cs', 'Devices.cs', 'Pdf.cs', 'Worker.cs', 'Server.cs', 'Profiles.cs', 'ShareQr.cs')
     $arguments = @('/nologo', '/nostdlib+', '/target:winexe', '/platform:x86', '/optimize+', '/checked+', '/warn:4', '/warnaserror+', '/nowarn:0649', '/langversion:4', '/codepage:65001', '/utf8output')
     # CS0649: DTO fields are populated by the strict JSON deserializer.
     $arguments += $references | ForEach-Object { '/reference:"{0}"' -f (Join-Path $referenceRoot $_) }

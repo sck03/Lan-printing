@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Drawing.Printing;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -25,7 +26,7 @@ namespace LanPrint.Legacy
             try
             {
                 Assert(!Environment.Is64BitProcess, "Tests must actually execute in an x86 process");
-                Signature(); Models(); Persistence(root); Images(root); LargePdf(root); Framing(root);
+                Signature(); Models(); Persistence(root); DriverProfiles(root); Images(root); LargePdf(root); Framing(root);
                 if (args.Length == 1)
                 {
                     TestLicense fixture = Json.Read<TestLicense>(args[0], 64 * 1024);
@@ -33,7 +34,7 @@ namespace LanPrint.Legacy
                     Assert(claims.customer == "测试办公室", "Signed claims must remain compatible");
                     Reject(() => Licensing.Verify(fixture.code, Licensing.MachineCode("other"), Security.Hex(fixture.public_key)));
                 }
-                Console.WriteLine("PASS: x86 execution, RFC 8032 strict verification, JSON validation, ownership, quotas, persistence rollback, restart recovery, images, native PDF and 100 MB streaming");
+                Console.WriteLine("PASS: x86 execution, strict verification/JSON, ownership/quotas, persistence/restart, driver presets, 300/600 DPI, images, native PDF and 100 MB streaming");
                 return 0;
             }
             catch (Exception error) { Console.Error.WriteLine(error); return 1; }
@@ -67,6 +68,41 @@ namespace LanPrint.Legacy
             foreach (string json in new[] { "{\"unknown\":1}", "{\"copies\":1.5}", "{\"copies\":\"2\"}", "{\"color\":1}" })
                 Reject(() => Json.Parse<PrintOptions>(Encoding.UTF8.GetBytes(json)));
             Assert(Json.Parse<PrintOptions>(Encoding.UTF8.GetBytes("{\"printer\":\"demo\"}")).render_dpi == 300, "Old options use defaults");
+            Devices devices = Backend.Devices(true, true);
+            new PrintOptions { printer = "demo-printer", render_dpi = 600 }.Validate(devices, 1);
+            Reject(() => new PrintOptions { printer = "demo-printer", render_dpi = 1200 }.Validate(devices, 1));
+            Reject(() => new PrintOptions { printer = "demo-printer", profile_id = "../invalid" }.Validate(devices, 1));
+        }
+        private static void DriverProfiles(string root)
+        {
+            byte[] mode = new byte[224]; mode[68] = 220; mode[70] = 4;
+            mode[220] = 1; mode[221] = 2; mode[222] = 3; mode[223] = 4;
+            var fixture = new DriverProfile { id = Guid.NewGuid().ToString("D"), name = "照片纸 · 高质量 · 关闭高速",
+                printer = "demo-printer", driver = "test", devmode = Convert.ToBase64String(mode) };
+            Profiles.Save(root, fixture);
+            Assert(Profiles.Load(root, fixture.id, fixture.printer).devmode == fixture.devmode, "Preserve private driver bytes on disk");
+            Assert(Profiles.List(root).Length == 1, "List stored presets");
+            Reject(() => Profiles.Load(root, fixture.id, "other-printer"));
+            Reject(() => Profiles.Remove(root, "../config"));
+            fixture.devmode = "invalid-base64"; Reject(() => Profiles.Save(root, fixture));
+            mode[70] = 5; fixture.devmode = Convert.ToBase64String(mode); Reject(() => Profiles.Save(root, fixture));
+            Profiles.Remove(root, fixture.id); Assert(Profiles.List(root).Length == 0, "Remove idle preset");
+            string printer = Environment.GetEnvironmentVariable("LANPRINT_TEST_DRIVER");
+            if (!String.IsNullOrEmpty(printer))
+            {
+                DriverProfile profile = Profiles.Capture(printer, false);
+                profile.name = "Installed driver test"; Profiles.Save(root, profile);
+                DriverProfile loaded = Profiles.Load(root, profile.id, printer);
+                Assert(loaded.devmode == profile.devmode, "Installed vendor data survives persistence");
+                using (var document = new PrintDocument())
+                {
+                    document.PrinterSettings.PrinterName = printer;
+                    Profiles.Apply(document, loaded);
+                    loaded.driver += "-changed"; Reject(() => Profiles.Apply(document, loaded));
+                }
+                Console.WriteLine("PASS: installed driver capture/restore, private bytes=" + (Convert.FromBase64String(profile.devmode).Length - 220));
+                Profiles.Remove(root, profile.id);
+            }
         }
         private static Job NewJob(string owner, string request, string file)
         {
@@ -125,11 +161,25 @@ namespace LanPrint.Legacy
                 string pdf = Path.Combine(root, "扫描.pdf");
                 Raster.SaveScan(image, pdf, new ScanOptions { dpi = 200, format = "pdf" });
                 using (var scanned = new Document(pdf))
-                using (Bitmap preview = scanned.Render(0, 1400, false, false)) Assert(scanned.Pages == 1 && preview.Height == 1400, "Scanned PDF opens and renders natively");
+                {
+                    using (Bitmap preview = scanned.Render(0, 1400, false, false)) Assert(scanned.Pages == 1 && preview.Height == 1400, "Scanned PDF opens and renders natively");
+                    using (Bitmap high = scanned.Render(0, 7016, false, true)) Assert(high.Height == 7016, "600 DPI PDF rendering is available in x86");
+                    Reject(() => { using (Bitmap invalid = scanned.Render(0, 7017, false, true)) { } });
+                }
                 if (Environment.GetEnvironmentVariable("LANPRINT_TEST_VIRTUAL_PRINT") == "1")
                 {
+                    DriverProfile profile = Profiles.Capture("Microsoft Print to PDF", false);
+                    byte[] mode = Convert.FromBase64String(profile.devmode);
+                    BitConverter.GetBytes(BitConverter.ToInt32(mode, 72) | 0x1903).CopyTo(mode, 72);
+                    BitConverter.GetBytes((short)2).CopyTo(mode, 76); // Landscape
+                    BitConverter.GetBytes((short)11).CopyTo(mode, 78); // A5
+                    BitConverter.GetBytes((short)7).CopyTo(mode, 86); // Must normalize to one driver copy
+                    BitConverter.GetBytes((short)2).CopyTo(mode, 92); // Color
+                    BitConverter.GetBytes((short)1).CopyTo(mode, 94); // Simplex
+                    profile.devmode = Convert.ToBase64String(mode);
                     string printed = Path.Combine(root, "virtual-print.pdf");
-                    Backend.Print(pdf, new PrintOptions { printer = "Microsoft Print to PDF", copies = 2, landscape = true }, false, printed);
+                    Backend.Print(pdf, new PrintOptions { printer = profile.printer, profile_id = profile.id, copies = 2,
+                        landscape = false, color = false, paper = "A4", render_dpi = 600 }, false, printed, profile);
                     // Print() submits to the spooler; the virtual driver writes
                     // and releases its output asynchronously.
                     bool ready = false;
@@ -142,7 +192,16 @@ namespace LanPrint.Legacy
                     }
                     Assert(ready, "Virtual spooler must finish writing its output");
                     using (var result = new Document(printed))
-                    using (Bitmap page = result.Render(0, 1400, false, false)) Assert(result.Pages == 2 && page.Width > page.Height, "GDI print honors copies and landscape");
+                    using (Bitmap page = result.Render(0, 1400, false, false))
+                    {
+                        Assert(result.Pages == 2 && page.Width > page.Height, "Preset overrides orientation and does not multiply copies");
+                        bool red = false;
+                        for (int y = 0; y < page.Height && !red; y += 5)
+                            for (int x = 0; x < page.Width && !red; x += 5)
+                            { Color pixel = page.GetPixel(x, y); red = pixel.R > 180 && pixel.G < 80 && pixel.B < 80; }
+                        Assert(red, "Preset color overrides generic grayscale");
+                    }
+                    Console.WriteLine("PASS: Microsoft Print to PDF preset color/orientation override, two copies and 600 DPI");
                 }
             }
             string bad = Path.Combine(root, "bad.pdf"); File.WriteAllText(bad, "not a PDF");

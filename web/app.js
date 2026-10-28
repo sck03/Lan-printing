@@ -357,10 +357,6 @@ async function refreshJobs() {
 function initializeShareQr() {
   const image = $("share-qr");
   const status = $("share-qr-status");
-  if (session.shareQr === false) {
-    image.closest("figure").hidden = true;
-    return;
-  }
   image.onload = () => {
     status.hidden = true;
     image.hidden = false;
@@ -411,15 +407,12 @@ document.addEventListener("DOMContentLoaded", async () => {
       document.title = "局域打印站 · 旧系统版";
       $("format-summary").textContent = "PDF · 图片";
       $("file-input").accept = ".pdf,.png,.jpg,.jpeg,.bmp";
-      for (const option of [...$("render-dpi").options]) {
-        if (Number(option.value) > session.renderDpiMax) option.remove();
-      }
     }
     initializeNetworkCheck();
     $("office-hint").textContent = session.officeFormats?.length
       ? `主机可转换：${session.officeFormats.map((x) => x.toUpperCase()).join("、")}。转换后预览并打印；表格沿用文件内的打印区域和分页。`
       : session.legacy
-        ? "旧系统版使用 300 DPI 打印；Word、Excel、PPT 或 WPS 文档请先导出 PDF 再上传。"
+        ? "Word、Excel、PPT 或 WPS 文档请先导出 PDF 再上传；照片打印可选原厂驱动预设和 600 DPI。"
         : "主机未检测到办公文档转换工具。Windows 请安装 Office/WPS；macOS、Linux 请安装 LibreOffice，或先导出 PDF。";
     $("share-url").textContent = session.shareUrl;
     initializeShareQr();

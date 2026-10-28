@@ -14,6 +14,7 @@ namespace LanPrint.Legacy
         public int page = 0;
         public PrintOptions print;
         public ScanOptions scan;
+        public DriverProfile profile;
         public bool show_virtual = false, demo = false;
     }
     internal sealed class WorkerResponse
@@ -21,6 +22,7 @@ namespace LanPrint.Legacy
         public string error;
         public int pages = 0;
         public Devices devices;
+        public DriverProfile profile;
     }
 
     internal static class Worker
@@ -30,7 +32,7 @@ namespace LanPrint.Legacy
             var response = new WorkerResponse();
             try
             {
-                WorkerRequest request = Json.Read<WorkerRequest>(input, 64 * 1024);
+                WorkerRequest request = Json.Read<WorkerRequest>(input, 256 * 1024);
                 if (request == null) throw new InvalidDataException("设备请求为空。");
                 if (!String.IsNullOrEmpty(request.gate))
                     using (EventWaitHandle gate = EventWaitHandle.OpenExisting(request.gate))
@@ -47,8 +49,9 @@ namespace LanPrint.Legacy
                         break;
                     case "print":
                         if (request.print == null) throw new InvalidDataException("缺少打印参数。");
-                        Backend.Print(request.path, request.print, request.demo);
+                        Backend.Print(request.path, request.print, request.demo, null, request.profile);
                         break;
+                    case "profile": response.profile = Profiles.Capture(request.path, true); break;
                     case "scan":
                         if (request.scan == null) throw new InvalidDataException("缺少扫描参数。");
                         request.scan.Validate(Backend.Devices(request.demo, true));
